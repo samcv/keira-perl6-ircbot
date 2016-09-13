@@ -8,6 +8,8 @@ use base qw(Bot::BasicBot);
 use URI::Find;
 use LWP::Simple;
 use WWW::Mechanize my $ticked = 0;
+use feature 'unicode_strings';
+use utf8;
 # Debian package list:
 # curl
 # Debian perl package list:
@@ -38,6 +40,7 @@ sub said {
 	}
 	elsif ( $body =~ /^s\// ) {
 		print "hit sed match\n";
+		return;
 		my $sed_line = $body;
 		$sed_line =~ s|/|#|g;
 		$sed_line =~ s/\$/\\\$/g;
@@ -111,7 +114,7 @@ sub said {
 		#  $url =: m/.*:.*:.*:.*:.*:.*/
 
 		#my $curl_text = `curl -I -L $url | egrep '^Content-Type' | grep -i text`;
-		my @curl = `curl -g -N -I -L --url $url`;
+		my @curl = `curl -g -N -I -L --connect-timeout 3 --url $url`;
 
 		#print "curl: @curl\n";
 		my $cloudflare = 0;
@@ -144,7 +147,7 @@ sub said {
 		}
 		my $cookie_text = "";
 		if ( $has_cookie == 1 ) {
-			$cookie_text = "@ ";
+			$cookie_text = '🍪' . " ";
 		}
 		if ($is_404) {
 			$self->say(
@@ -156,8 +159,8 @@ sub said {
 		}
 		if ($is_text) {
 
-			my $mech = WWW::Mechanize->new();
-			$mech->get("$url") or return;
+			my $mech = WWW::Mechanize->new(timeout => 3);
+			$mech->get("$url");
 			if ( !$mech->is_html() ) {
 				print "WWW::Mechanize says it's not html\n";
 				return;

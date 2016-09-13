@@ -14,31 +14,54 @@ use WWW::Mechanize my $ticked = 0;
 # liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl libwww-mechanize-perl
 #START
 #END
-my $nick_name = $username;
+my $nickname      = $username;
 my $alt_nickname_1 = $username . "-";
 my $alt_nickname_2 = $username . "_";
-
-my $repo_url = "<repo url>";
-
+my $last_line;
+my $last_line_who;
 
 sub said {
 	print "sub said Called\n";
-
 	#&forkit();
 	my $self    = shift;
 	my $message = shift;
 	my $body    = $message->{body};
+	my $who_said = $message->{who};
+
 	if ( $body =~ /\.bots.*/ ) {
 		$self->say(
 			{   channel => ( $self->channels ),    #[0],
-				body => "$username reporting in! [perl] $repo_url\n",
+				body    => "$username reporting in! [perl] $repo_url\n",
 			}
 		);
 		return;
 	}
 	elsif ( $body =~ /^s\// ) {
 		print "hit sed match\n";
+		my $sed_line = $body;
+		$sed_line =~ s|/|#|g;
+		$sed_line =~ s/\$/\\\$/g;
+		$last_line =~ s/\$/\\\$/g;
+		print "env -i echo \"$last_line\" | env -i sed \"$sed_line\"";
+		my $replaced_text = `env -i echo "$last_line" | env -i sed "$sed_line"`;
+		chomp $replaced_text;
+		$replaced_text =~ s/\n/ | /g;
+		if ($replaced_text eq $last_line) {
+			return;
+		}
+		my $short_replaced_text = substr( $replaced_text, 0, 200 );
+		if ( $replaced_text ne $short_replaced_text ) {
+			$replaced_text = $short_replaced_text . " ...";
+		}
+		$self->say(
+			{   channel => ( $self->channels ),    #[0],
+				body    => "<$last_line_who> $replaced_text\n",
+			}
+		);
+		return;
 	}
+	$last_line  = $body;
+	$last_line_who   = $who_said;
 
 	#exit if $ticked;
 	my $url;

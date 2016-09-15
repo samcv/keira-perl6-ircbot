@@ -6,9 +6,6 @@ use diagnostics;
 package PerlBot;
 our $VERSION = 0.1;
 use base qw(Bot::BasicBot);
-use URI::Find;
-use LWP::Simple;
-use WWW::Mechanize;
 use IPC::System::Simple qw(system capture);
 use Encode 'decode_utf8';
 #use IPC::System::Options 'system', 'readpipe', 'run', 'capture', -lang=>"en_US.UTF-8";
@@ -18,7 +15,7 @@ use utf8;
 # Debian package list:
 # perl curl
 # Debian perl package list:
-# liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl libwww-mechanize-perl
+# liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl
 # libipc-system-simple-perl
 
 # Arch package list:
@@ -59,8 +56,7 @@ sub said {
 	foreach my $line (@results) {
 		if ($line =~ /^%/) {
 			$line =~ s/^%//;
-			$line_to_say = $line;  chomp $line_to_say;
-			$line_to_say = decode_utf8($line_to_say);
+			$line_to_say = decode_utf8($line);  chomp $line_to_say;
 		}
 	}
 	if ($line_to_say ne "%") {

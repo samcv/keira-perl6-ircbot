@@ -4,21 +4,119 @@ use strict;
 use warnings;
 use LWP::Simple;
 use URI::Find;
-use WWW::Mechanize;
-use WWW::Mechanize;
 use feature 'unicode_strings';
 use utf8;
 our $VERSION = 0.1;
 
+
+my $max_title_length = 120;
 #START
 #END
 
 my $who_said = $ARGV[0];
 my $body     = $ARGV[1];
 
+my $line_no          =  1;
+my $is_text          =  0;
+my $end_of_header    =  0;
+
+my $title            = -1;
+my @curl_title;
+my $title_start_line = -1;
+my $title_end_line   = -1;
+my $url;
+
+my $cloudflare        = 0;
+my $has_cookie        = 0;
+my $is_404            = 0;
+my $error_line        = 0;
+my $new_location_text = q();
+my $new_location      = q(%);
+
+
 #print "who: $who_said  body: $body \n";
 my $last_line;        # FIXME
 my $last_line_who;    # FIXME
+sub get_url {
+	$url = shift @_;
+	open( my $STDOUT, "-|", "curl --no-buffer -v --url $url 2>&1" );
+
+	while  ( defined (my $line = <$STDOUT>) ) {
+		# Detect end of header
+		if ( ( $line =~ /^<\s*$/) && ($end_of_header == 0) ) {
+			$end_of_header = 1;
+			print "end of header detected\n";
+			if($is_text == 0) {
+				print "Stopping because it's not text\n";
+				close $STDOUT;
+				last;
+			}
+		}
+		# Detect content type
+		if ( ($line =~ /^<\s*Content-Type: text/i) && ($end_of_header == 0) ) {
+			print "Curl header says it's text\n";
+			$is_text = 1;
+		}
+		elsif ( $line =~ /^<\s*CF-RAY:/ixms ) {
+			$cloudflare = 1;
+			print "Cloudflare = 1\n";
+		}
+		elsif ( $line =~ /^<\s*Set-Cookie.*/ixms ) {
+			$has_cookie = 1;
+			print "Cookie detected\n";
+		}
+		elsif ( $line =~ /^<\s*Location:\s*/xms ) {
+			$new_location = $line;
+			$new_location =~ s/^<\s*Location:\s*//ixms;
+			$new_location =~ s/^\s+|\s+$//gxms;
+			print "New Location: $new_location\n";
+		}
+
+		# Find the Title
+		if ( ($end_of_header == 1) && ($line =~ s/.*<title>//i  ) ) {
+			# Print the line number
+			#print line_indent($line_no) . $line_no . '
+			push @curl_title, $line;
+			$title_start_line = $line_no;
+		}
+
+		if ( ($end_of_header == 1) && ($line =~ s/<\/title>.*//i) ) {
+			$title_end_line   = $line_no;
+			if ($title_end_line == $title_start_line) {
+				$curl_title[0] = $line;
+				last;
+			}
+			push @curl_title, $line;
+			last;
+		}
+		elsif ( ($end_of_header == 1) && ($title_start_line != -1 ) && ($title_start_line != $line_no ) ) {
+			push @curl_title, $line;
+		}
+
+
+		$line_no = $line_no + 1;
+
+	}
+	# Print out $is_text and $title's values
+	print '$is_text = ' . "$is_text\n";
+	print '@curl_title   = ' . @curl_title . "\n";
+	print '$end_of_header = ' . "$end_of_header\n";
+	# If we found the header, print out what line it starts on
+	if ( ($title_start_line != -1) || ($title_end_line != 1) ) {
+		print '$title_start_line = ' . "$title_start_line  " . '$title_end_line = ' . $title_end_line . "\n";
+	}
+	else {
+		print "No title found, searched $line_no lines\n";
+	}
+
+	close($STDOUT);
+	if ($new_location ne '%') {
+		return 1;
+	}
+
+}
+
+
 
 # .bots reporting functionality
 if ( $body =~ /[.]bots.*/xms ) {
@@ -52,8 +150,6 @@ elsif ( $body =~ /^s\//xms ) {
 $last_line     = $body;
 $last_line_who = $who_said;
 
-my $url;
-my $req_url;
 my $finder = URI::Find->new(
 	sub {
 		my ( $uri, $orig_uri ) = @_;
@@ -81,60 +177,26 @@ if ($num_found) {
 
 	if ( !$url ) {
 		print "Empty url found!\n";
-		return;
+		exit;
 	}
-	$req_url = $url;
 	if ( $url =~ m/;/xms ) {
 		print "URL has comma(s) in it!\n";
 		$url =~ s/;/%3B/xmsg;
-		return;
+		exit;
 	}
 	if ( $url =~ m/\$/xms ) {
 		print "\$ sign found\n";
-		return;
+		exit;
 	}
 
-	#if($url =: m/.*:.*:.*:.*:.*:.*/) {
-	#  print "IPv6 Address detected, adding brackets\n"
-	#  $url =: m/.*:.*:.*:.*:.*:.*/
-
-	#my $curl_text = `curl -I -L $url | egrep '^Content-Type' | grep -i text`;
-	my @curl = `curl -g -N -I -L --connect-timeout 3 --url $url`;
-
-	#print "curl: @curl\n";
-	my $cloudflare        = 0;
-	my $is_text           = 0;
-	my $has_cookie        = 0;
-	my $is_404            = 0;
-	my $error_line        = 0;
-	my $new_location_text = q();
-	my $new_location      = q(%);
-
-	foreach my $line (@curl) {
-		if ( $line =~ /^CF-RAY:/ixms ) {
-			$cloudflare = 1;
-			print "Cloudflare = 1\n";
-		}
-		elsif ( $line =~ /^Content-Type.*text.*/ixms ) {
-			$is_text = 1;
-			print "Curl header says it's text\n";
-		}
-		elsif ( $line =~ /^Set-Cookie.*/ixms ) {
-			$has_cookie = 1;
-		}
-		elsif ( $line =~ /^Location:/xms ) {
-			$new_location = $line;
-			$new_location =~ s/^Location: //ixms;
-			$new_location =~ s/^\s+|\s+$//gxms;
-		}
-
-		#elsif ( $line =~ m/^HTTP.* 404/ ) {
-		#    $is_404 = 1;
-		#    $error_line = $line;
-		#    chomp $error_line;
-		#}
 	}
-
+	if ( get_url($url) ) {
+		@curl_title = ();
+		$title_start_line = -1;
+		$title_end_line   = -1;
+		get_url($new_location);
+		print $curl_title[0];
+	}
 	my $cloudflare_text = q();
 	if ( $cloudflare == 1 ) {
 		$cloudflare_text = ' **CLOUDFLARE**';
@@ -145,25 +207,25 @@ if ($num_found) {
 	}
 	if ($is_404) {
 		print "# $error_line # " . $cookie_text . $cloudflare_text . "$url\n";
-		return;
+		exit;
 	}
 	if ($is_text) {
 
-		my $mech = WWW::Mechanize->new( timeout => 3 );
-		$mech->get("$url");
-		if ( !$mech->is_html() ) {
-			print "WWW::Mechanize says it's not html\n";
-			return;
+		# Handle a multi line url
+		my $title_length = @curl_title;
+		print "Lines in title: $title_length\n";
+		if ($title_length == 1) {
+			$title = $curl_title[0];
 		}
 		else {
-			print "WWW::Mechanize says It's html\n";
+			$title = join (" | ", @curl_title);
+			print "$title  url is\n";
 		}
-		my $title = $mech->title();
 
 		chomp $title;
 		if ( !$title ) {
 			print "No title found\n";
-			return;
+			exit;
 		}
 
 		# Remove newlines and replace with a tab
@@ -172,13 +234,13 @@ if ($num_found) {
 
 		#$title =~ s/&#/& #/g;
 		$title =~ s/\r/ | /xmsg;
-		my $short_title = substr $title, 0, 150;
+		my $short_title = substr $title, 0, $max_title_length;
 		if ( $title ne $short_title ) {
 			$title = $short_title . ' ...';
 		}
 		if ( !$title ) {
 			print "No title found right before print\n";
-			return;
+			exit;
 		}
 
 		if ( $new_location ne q(%) ) {
@@ -192,7 +254,5 @@ if ($num_found) {
 		print "%[ $title ]" . $new_location_text . $cloudflare_text . $cookie_text . "\n";
 	}
 	else {
-		return;
+		exit;
 	}
-
-}

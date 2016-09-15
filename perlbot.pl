@@ -10,22 +10,29 @@ use URI::Find;
 use LWP::Simple;
 use WWW::Mechanize;
 use IPC::System::Simple qw(system capture);
+use Encode 'decode_utf8';
+#use IPC::System::Options 'system', 'readpipe', 'run', 'capture', -lang=>"en_US.UTF-8";
+
 use feature 'unicode_strings';
 use utf8;
 # Debian package list:
-# curl
+# perl curl
 # Debian perl package list:
 # liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl libwww-mechanize-perl
 # libipc-system-simple-perl
+
 # Arch package list:
-# curl
+# perl curl
 # Arch perl package list:
-#
+# perl-uri-find
+
+#CPAN package: IPC::System::Options
+
 my $ticked = 0;
 
 #START
 #END
-my $nickname      = $username;
+my $nickname       = $username;
 my $alt_nickname_1 = $username . "-";
 my $alt_nickname_2 = $username . "_";
 my $last_line;
@@ -45,6 +52,7 @@ sub said {
 	push @said_args, $body;
 	# Run said.pl
 	my @results = capture($^X, "said.pl", @said_args);
+
 	print "Results: ";
 	print @results;
 	print "\n";
@@ -52,6 +60,7 @@ sub said {
 		if ($line =~ /^%/) {
 			$line =~ s/^%//;
 			$line_to_say = $line;  chomp $line_to_say;
+			$line_to_say = decode_utf8($line_to_say);
 		}
 	}
 	if ($line_to_say ne "%") {

@@ -101,11 +101,13 @@ if ($num_found) {
 	my @curl = `curl -g -N -I -L --connect-timeout 3 --url $url`;
 
 	#print "curl: @curl\n";
-	my $cloudflare = 0;
-	my $is_text    = 0;
-	my $has_cookie = 0;
-	my $is_404     = 0;
-	my $error_line = 0;
+	my $cloudflare   = 0;
+	my $is_text      = 0;
+	my $has_cookie   = 0;
+	my $is_404       = 0;
+	my $error_line   = 0;
+	my $new_location_text = "";
+	my $new_location      = "%";
 
 	foreach my $line (@curl) {
 		if ( $line =~ /^CF-RAY:/i ) {
@@ -118,6 +120,11 @@ if ($num_found) {
 		}
 		elsif ( $line =~ /^Set-Cookie.*/i ) {
 			$has_cookie = 1;
+		}
+		elsif ( $line =~ /^Location:/ ) {
+			$new_location = $line;
+			$new_location =~ s/^Location: //i;
+			chomp $new_location;
 		}
 		#elsif ( $line =~ m/^HTTP.* 404/ ) {
 		#	$is_404 = 1;
@@ -162,18 +169,27 @@ if ($num_found) {
 		$title =~ s/\n/ | /g;
 
 		#$title =~ s/&#/& #/g;
-		$title =~ s/\r/<CR>/g;
-		my $short_title = substr( $title, 0, 70 );
+		$title =~ s/\r/ | /g;
+		my $short_title = substr( $title, 0, 150 );
 		if ( $title ne $short_title ) {
 			$title = $short_title . " ...";
 		}
 		if ( !$title ) {
-			print "exiting line 52\n";
+			print "No title found right before print\n";
 			return;
 		}
 
 
-		print "%[ $title ]" . $cloudflare_text . $cookie_text . "\n";
+		if ( $new_location ne "%" ) {
+			$new_location_text = " >> $new_location";
+		chomp $new_location_text;
+		}
+		else {
+			$new_location_text = "";
+		}
+
+
+		print "%[ $title ]" . $new_location_text . $cloudflare_text . $cookie_text . "\n";
 	}
 	else {
 		return;

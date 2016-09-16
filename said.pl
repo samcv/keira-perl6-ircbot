@@ -77,21 +77,31 @@ sub get_url {
 
 		# Find the Title
 		if ( ($end_of_header == 1) && ($line =~ s/.*<title>//i  ) ) {
-			# Print the line number
-			#print line_indent($line_no) . $line_no . '
-			push @curl_title, $line;
 			$title_start_line = $line_no;
+			# If the line is empty don't push it to the array
+			if ( $line =~ /^\s*$/) {
+			}
+			else {
+				push @curl_title, $line;
+			}
 		}
 
 		if ( ($end_of_header == 1) && ($line =~ s/<\/title>.*//i) ) {
 			$title_end_line   = $line_no;
+			# If <title> and </title> are on the same line, just set that one line to the aray
 			if ($title_end_line == $title_start_line) {
 				$curl_title[0] = $line;
 				last;
 			}
-			push @curl_title, $line;
+			# If the line is empty don't push it to the array
+			if ( $line =~ /^\s*$/) {
+			}
+			else {
+				push @curl_title, $line;
+			}
 			last;
 		}
+		# If we are between <title> and </title>, push it to the array
 		elsif ( ($end_of_header == 1) && ($title_start_line != -1 ) && ($title_start_line != $line_no ) ) {
 			push @curl_title, $line;
 		}
@@ -193,7 +203,7 @@ if ($num_found >= 1) {
 
 	}
 	if ( get_url($url) ) {
-		@curl_title = ();
+		@curl_title       = ();
 		$title_start_line = -1;
 		$title_end_line   = -1;
 		get_url($new_location);

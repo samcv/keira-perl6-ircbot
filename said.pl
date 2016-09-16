@@ -6,7 +6,7 @@ use LWP::Simple;
 use URI::Find;
 use feature 'unicode_strings';
 use utf8;
-our $VERSION = 0.1;
+our $VERSION = 0.2;
 
 
 my $max_title_length = 120;
@@ -24,7 +24,7 @@ my $title            = -1;
 my @curl_title;
 my $title_start_line = -1;
 my $title_end_line   = -1;
-my $url;
+my $url              = '%';
 
 my $cloudflare        = 0;
 my $has_cookie        = 0;
@@ -39,7 +39,10 @@ my $last_line;        # FIXME
 my $last_line_who;    # FIXME
 sub get_url {
 	$url = shift @_;
-	open( my $STDOUT, "-|", "curl --no-buffer -v --url $url 2>&1" );
+	if ($url eq '%') {
+		return;
+	}
+	open( my $STDOUT, "-|", "curl --max-time 5 --no-buffer -v --url $url 2>&1" );
 
 	while  ( defined (my $line = <$STDOUT>) ) {
 		# Detect end of header
@@ -62,7 +65,7 @@ sub get_url {
 			print "Cloudflare = 1\n";
 		}
 		elsif ( $line =~ /^<\s*Set-Cookie.*/ixms ) {
-			$has_cookie = 1;
+			$has_cookie++;
 			print "Cookie detected\n";
 		}
 		elsif ( $line =~ /^<\s*Location:\s*/xms ) {
@@ -122,6 +125,8 @@ sub get_url {
 if ( $body =~ /[.]bots.*/xms ) {
 	print "%$username reporting in! [perl] $repo_url version $VERSION\n";
 }
+#START
+#END
 
 # sed functionality
 elsif ( $body =~ /^s\//xms ) {
@@ -168,14 +173,11 @@ my $finder = URI::Find->new(
 
 my $num_found = $finder->find( \$body );
 
-#my $req_url = $url;
-#$req_url =~ s/;/%3B/g;
-#print $req_url . " " . $url . "\n";
-
-if ($num_found) {
+print "Numfound: $num_found\n";
+if ($num_found >= 1) {
 	print "Number of URL's found $num_found \n";
 
-	if ( !$url ) {
+	if ( $url eq '%' ) {
 		print "Empty url found!\n";
 		exit;
 	}
@@ -202,7 +204,7 @@ if ($num_found) {
 		$cloudflare_text = ' **CLOUDFLARE**';
 	}
 	my $cookie_text = q();
-	if ( $has_cookie == 1 ) {
+	if ( $has_cookie >= 1 ) {
 		$cookie_text = q( ) . q(@);
 	}
 	if ($is_404) {

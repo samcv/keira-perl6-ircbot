@@ -8,13 +8,20 @@ use feature 'unicode_strings';
 use utf8;
 our $VERSION = 0.2;
 
-
 my $max_title_length = 120;
+
 #START
 #END
 
 my $who_said = $ARGV[0];
 my $body     = $ARGV[1];
+my $username = $ARGV[2];
+
+my $history_file     = $username . '_history.txt';
+
+my $new_history_file = $username . '_history.new.txt';
+my $bak_history_file = $username . '_history.bak.txt';
+my $history_file_length = 20;
 
 my $line_no          =  1;
 my $is_text          =  0;
@@ -33,6 +40,16 @@ my $error_line        = 0;
 my $new_location_text = q();
 my $new_location      = q(%);
 
+if( ($body eq "") and ($who_said eq "") ) {
+	print "Did not receive any input\n";
+	exit 1;
+}
+# Trunicate history file
+`tail -n $history_file_length ./$history_file > ./$new_history_file` and print "Problem with tail $history_file > $new_history_file, Error $?\n";
+  `mv ./$history_file ./$bak_history_file` and print "Problem moving $history_file to $bak_history_file, Error $?\n";
+  `mv ./$new_history_file ./$history_file` and print "Problem moving $new_history_file to $history_file, Error $?\n";
+  `rm ./$bak_history_file` and print "Problem removing $bak_history_file, Error $?\n";
+
 
 #print "who: $who_said  body: $body \n";
 my $last_line;        # FIXME
@@ -42,7 +59,7 @@ sub get_url {
 	if ($url eq '%') {
 		return;
 	}
-	open( my $STDOUT, "-|", "curl --max-time 5 --no-buffer -v --url $url 2>&1" );
+	open( my $STDOUT, "-|", "curl -A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36\" --max-time 5 --no-buffer -v --url \"$url\" 2>&1" );
 
 	while  ( defined (my $line = <$STDOUT>) ) {
 		# Detect end of header
@@ -138,30 +155,6 @@ if ( $body =~ /[.]bots.*/xms ) {
 #START
 #END
 
-# sed functionality
-elsif ( $body =~ /^s\//xms ) {
-	print "hit sed match\n";
-
-	return;
-	my $sed_line = $body;
-	$sed_line =~ s/[\/]/#/xmsg;
-	$sed_line =~ s/\$/\\\$/xmsg;
-	$last_line =~ s/\$/\\\$/xmsg;
-	print "env -i echo \"$last_line\" | env -i sed \"$sed_line\"";
-	my $replaced_text = `env -i echo "$last_line" | env -i sed "$sed_line"`;
-	chomp $replaced_text;
-	$replaced_text =~ s/\n/ | /xmsg;
-
-	if ( $replaced_text eq $last_line ) {
-		return;
-	}
-	my $short_replaced_text = substr $replaced_text, 0, 200;
-	if ( $replaced_text ne $short_replaced_text ) {
-		$replaced_text = $short_replaced_text . ' ...';
-	}
-
-	print "<$last_line_who> $replaced_text\n", return;
-}
 $last_line     = $body;
 $last_line_who = $who_said;
 
@@ -256,14 +249,14 @@ if ($num_found >= 1) {
 		}
 
 		if ( $new_location ne q(%) ) {
-			$new_location_text = " >> $new_location";
+			$new_location_text = " >> $new_location";
 			chomp $new_location_text;
 		}
 		else {
 			$new_location_text = q();
 		}
 
-		print "%[ $title ]" . $new_location_text . $cloudflare_text . $cookie_text . "\n";
+		print "%[ $title ]" . $new_location_text . $cloudflare_text . $cookie_text . "\n";
 	}
 	else {
 		exit;

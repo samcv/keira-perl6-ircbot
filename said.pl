@@ -150,7 +150,7 @@ sub get_url {
 
 # .bots reporting functionality
 if ( $body =~ /[.]bots.*/xms ) {
-	print "%$username reporting in! [perl] $repo_url version $VERSION\n";
+	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
 }
 #START
 #END

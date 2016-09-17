@@ -24,8 +24,18 @@ use Encode  'decode_utf8';
 
 # CPAN package: IPC::System::Options
 
-#START
-#END
+
+my $username        = $ARGV[0];
+my $real_name       = $ARGV[1];
+my $server_address  = $ARGV[2];
+my $server_port     = $ARGV[3];
+my $server_channels = $ARGV[4];
+
+if ( ($username eq "") or ($real_name eq "") or ($server_address eq "") or ($server_port eq "") or ($server_channels eq "") ) {
+	print "Usage: perlbot.pl \"username\" \"real name\" \"server address\" \"server port\" \"server channel\"\n";
+	exit 1;
+}
+
 my $nickname         = $username;
 my $alt_nickname_1   = $username . "-";
 my $alt_nickname_2   = $username . "_";

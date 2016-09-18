@@ -163,6 +163,43 @@ if ( $body =~ /[.]bots.*/xms ) {
 #START
 #END
 
+# Sed functionality. Only called if the bot's username is set and it can know what history file
+# to use.
+elsif ( ($body =~ m|^s/.+/| ) and ($username ne "") ) {
+	my $first = $body;
+	$first =~ s|^s/(.+)/.*|$1|;
+	print "first: $first\n";
+	my $second = $body;
+	$second =~ s|^s/.+/(.*)|$1|;
+	print "second: $second\n";
+	my $replaced_who;
+	my $replaced_said;
+	print "Trying to open $history_file\n";
+	open my $history_fh, '<', "$history_file" or print "Could not open $history_file\n";
+	while  ( defined (my $history_line = <$history_fh>) ) {
+		chomp $history_line;
+		print "$history_line\n";
+		my $history_who = $history_line;
+		$history_who =~ s|^<(.+)>.*|$1|;
+		#print "history_who : $history_who\n";
+		my $history_said = $history_line;
+		$history_said =~ s/<.+> //;
+		#print "history_said: $history_said\n";
+		if (($history_said =~ m/$first/i) && ($history_said !~ m|^s/| )){
+			print "Found match\n";
+			$replaced_said = $history_said;
+			$replaced_said =~ s|$first|$second|ig;
+			$replaced_who = $history_who;
+			print "replaced_said: $replaced_said\n";
+		}
+	}
+	close $history_fh;
+	if ($replaced_said ne "") {
+		print "%<$replaced_who> $replaced_said\n";
+	}
+	exit 0;
+}
+
 $last_line     = $body;
 $last_line_who = $who_said;
 

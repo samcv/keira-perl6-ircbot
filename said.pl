@@ -24,6 +24,7 @@ my $end_of_header    =  0;
 
 my $title            = -1;
 my @curl_title;
+my $curl_max_time    =  5;
 my $title_start_line = -1;
 my $title_end_line   = -1;
 my $url              = '%';
@@ -67,7 +68,7 @@ sub get_url {
 	if ($url eq '%') {
 		return;
 	}
-	open( my $STDOUT, "-|", "curl -A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36\" --max-time 5 --no-buffer -v --url \"$url\" 2>&1" );
+	open( my $STDOUT, "-|", "curl --compressed -A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36\" --max-time $curl_max_time --no-buffer -v --url \"$url\" 2>&1" );
 
 	while  ( defined (my $line = <$STDOUT>) ) {
 		# Detect end of header

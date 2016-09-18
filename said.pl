@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use LWP::Simple;
 use URI::Find;
+use HTML::Entities;
 use feature 'unicode_strings';
 use utf8;
 our $VERSION = 0.2;
@@ -13,15 +14,9 @@ my $max_title_length = 120;
 #START
 #END
 
-my $who_said = $ARGV[0];
-my $body     = $ARGV[1];
-my $username = $ARGV[2];
-
-my $history_file     = $username . '_history.txt';
-
-my $new_history_file = $username . '_history.new.txt';
-my $bak_history_file = $username . '_history.bak.txt';
-my $history_file_length = 20;
+my $who_said   = $ARGV[0];
+my $body       = $ARGV[1];
+my $username   = $ARGV[2];
 
 my $line_no          =  1;
 my $is_text          =  0;
@@ -40,15 +35,28 @@ my $error_line        = 0;
 my $new_location_text = q();
 my $new_location      = q(%);
 
+my $history_file;
+my $new_history_file;
+my $bak_history_file;
+my $history_file_length;
+
 if( ($body eq "") and ($who_said eq "") ) {
 	print "Did not receive any input\n";
+	print "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
 }
-# Trunicate history file
-`tail -n $history_file_length ./$history_file > ./$new_history_file` and print "Problem with tail $history_file > $new_history_file, Error $?\n";
-  `mv ./$history_file ./$bak_history_file` and print "Problem moving $history_file to $bak_history_file, Error $?\n";
-  `mv ./$new_history_file ./$history_file` and print "Problem moving $new_history_file to $history_file, Error $?\n";
-  `rm ./$bak_history_file` and print "Problem removing $bak_history_file, Error $?\n";
+# Trunicate history file only if the bot's username is set.
+if ($username ne "") {
+	$history_file     = $username . '_history.txt';
+	$new_history_file = $username . '_history.new.txt';
+	$bak_history_file = $username . '_history.bak.txt';
+	$history_file_length = 20;
+
+	`tail -n $history_file_length ./$history_file > ./$new_history_file` and print "Problem with tail $history_file > $new_history_file, Error $?\n";
+	  `mv ./$history_file ./$bak_history_file` and print "Problem moving $history_file to $bak_history_file, Error $?\n";
+	  `mv ./$new_history_file ./$history_file` and print "Problem moving $new_history_file to $history_file, Error $?\n";
+	  `rm ./$bak_history_file` and print "Problem removing $bak_history_file, Error $?\n";
+}
 
 
 #print "who: $who_said  body: $body \n";
@@ -233,12 +241,13 @@ if ($num_found >= 1) {
 			exit;
 		}
 
-		# Remove newlines and replace with a tab
+		# Remove newlines and replace with ' | '
 		#$title =~ s/\n/ | /g;
 		$title =~ s/\n/ | /xmsg;
-
-		#$title =~ s/&#/& #/g;
+		# Replace carriage returns with ' | '
 		$title =~ s/\r/ | /xmsg;
+		# Decode html entities such as
+		$title = decode_entities($title);
 		my $short_title = substr $title, 0, $max_title_length;
 		if ( $title ne $short_title ) {
 			$title = $short_title . ' ...';

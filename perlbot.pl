@@ -55,7 +55,7 @@ sub said {
 	open my $history_fh, '>>', "$history_file" or print "Could not open history file, Error $?\n";
 	print $history_fh "<$who_said> $body\n" or print "Failed to append to $history_file, Error $?\n";
 	close $history_fh or print "Could not close $history_file, Error $?\n";
-
+	#print "@said_args\n";
 	my @results = capture($^X, "said.pl", @said_args);
 
 	print 'Results: ' . @results . "\n";

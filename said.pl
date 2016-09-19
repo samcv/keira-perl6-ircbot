@@ -9,14 +9,12 @@ use feature 'unicode_strings';
 use utf8;
 our $VERSION = 0.2;
 
+my($who_said, $body, $username) = @ARGV;
+
 my $max_title_length = 120;
 
 #START
 #END
-
-my $who_said   = $ARGV[0];
-my $body       = $ARGV[1];
-my $username   = $ARGV[2];
 
 my $line_no          =  1;
 my $is_text          =  0;
@@ -53,31 +51,24 @@ if ($username ne "") {
 	$bak_history_file = $username . '_history.bak.txt';
 	$history_file_length = 20;
 
-	`tail -n $history_file_length ./$history_file > ./$new_history_file` and print "Problem with tail $history_file > $new_history_file, Error $?\n";
-	  `mv ./$history_file ./$bak_history_file` and print "Problem moving $history_file to $bak_history_file, Error $?\n";
-	  `mv ./$new_history_file ./$history_file` and print "Problem moving $new_history_file to $history_file, Error $?\n";
-	  `rm ./$bak_history_file` and print "Problem removing $bak_history_file, Error $?\n";
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file` and print "Problem with tail $history_file > $new_history_file, Error $?\n";
 }
 
-
-#print "who: $who_said  body: $body \n";
-my $last_line;        # FIXME
-my $last_line_who;    # FIXME
 sub get_url {
 	$url = shift @_;
 	if ($url eq '%') {
 		return;
 	}
-	open( my $STDOUT, "-|", "curl --compressed -A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36\" --max-time $curl_max_time --no-buffer -v --url \"$url\" 2>&1" );
+	open( my $CURL_OUT, "-|", "curl --compressed -A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36\" --max-time $curl_max_time --no-buffer -v --url \"$url\" 2>&1" );
 
-	while  ( defined (my $line = <$STDOUT>) ) {
+	while  ( defined (my $line = <$CURL_OUT>) ) {
 		# Detect end of header
 		if ( ( $line =~ /^<\s*$/) && ($end_of_header == 0) ) {
 			$end_of_header = 1;
 			print "end of header detected\n";
 			if($is_text == 0) {
 				print "Stopping because it's not text\n";
-				close $STDOUT;
+				close $CURL_OUT;
 				last;
 			}
 		}
@@ -102,7 +93,7 @@ sub get_url {
 		}
 
 		# Find the Title
-		if ( ($end_of_header == 1) && ($line =~ s/.*<title>//i  ) ) {
+		if ( ($end_of_header == 1) && ($line =~ s/.*<title>\s?//i  ) ) {
 			$title_start_line = $line_no;
 			# If the line is empty don't push it to the array
 			if ( $line =~ /^\s*$/) {
@@ -112,7 +103,7 @@ sub get_url {
 			}
 		}
 
-		if ( ($end_of_header == 1) && ($line =~ s/<\/title>.*//i) ) {
+		if ( ($end_of_header == 1) && ($line =~ s/\s*<\/title>.*//i) ) {
 			$title_end_line   = $line_no;
 			# If <title> and </title> are on the same line, just set that one line to the aray
 			if ($title_end_line == $title_start_line) {
@@ -141,14 +132,14 @@ sub get_url {
 	print '@curl_title   = ' . @curl_title . "\n";
 	print '$end_of_header = ' . "$end_of_header\n";
 	# If we found the header, print out what line it starts on
-	if ( ($title_start_line != -1) || ($title_end_line != 1) ) {
+	if ( ($title_start_line != -1) or ($title_end_line != 1) ) {
 		print '$title_start_line = ' . "$title_start_line  " . '$title_end_line = ' . $title_end_line . "\n";
 	}
 	else {
 		print "No title found, searched $line_no lines\n";
 	}
 
-	close($STDOUT);
+	close($CURL_OUT);
 	if ($new_location ne '%') {
 		return 1;
 	}
@@ -200,9 +191,6 @@ elsif ( ($body =~ m|^s/.+/| ) and ($username ne "") ) {
 	}
 	exit 0;
 }
-
-$last_line     = $body;
-$last_line_who = $who_said;
 
 my $finder = URI::Find->new(
 	sub {
@@ -269,7 +257,7 @@ if ($num_found >= 1) {
 			$title = $curl_title[0];
 		}
 		else {
-			$title = join (" | ", @curl_title);
+			$title = join (" ", @curl_title);
 			print "$title  url is\n";
 		}
 
@@ -279,15 +267,16 @@ if ($num_found >= 1) {
 			exit;
 		}
 
-		# Remove newlines and replace with ' | '
-		#$title =~ s/\n/ | /g;
-		$title =~ s/\n/ | /xmsg;
-		# Replace carriage returns with ' | '
-		$title =~ s/\r/ | /xmsg;
-		# Decode html entities such as
+		# Remove starting whitespace
+		$title =~ s/^\s*//xmsg;
+		# Remove ending whitespace
+		$title =~s/\s*$//g;
+		# Replace carriage returns with two spaces
+		$title =~ s/\r/ /xmsg;
+		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
 		my $short_title = substr $title, 0, $max_title_length;
-		if ( $title ne $short_title ) {
+		if ( ( $title ne $short_title ) and ( $url !~ m|twitter[.]com/.+/status| ) ) {
 			$title = $short_title . ' ...';
 		}
 		if ( !$title ) {

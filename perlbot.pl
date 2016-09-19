@@ -10,13 +10,13 @@ use IPC::System::Simple qw(system capture);
 use Encode  'decode_utf8';
 
 # Debian package list:
-# 	perl curl
+# 	perl curl moreutils
 # Debian perl package list:
 # 	liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl
 # 	libipc-system-simple-perl
 
 # Arch package list:
-# 	perl curl
+# 	perl curl moreutils
 # Arch AUR package list:
 # 	perl-bot-basicbot
 # Arch perl package list:
@@ -24,16 +24,13 @@ use Encode  'decode_utf8';
 
 # CPAN package: IPC::System::Options
 
+my ($username, $real_name, $server_address, $server_port, $server_channels) = @ARGV;
 
-my $username        = $ARGV[0];
-my $real_name       = $ARGV[1];
-my $server_address  = $ARGV[2];
-my $server_port     = $ARGV[3];
-my $server_channels = $ARGV[4];
-
-if ( ($username eq "") or ($real_name eq "") or ($server_address eq "") or ($server_port eq "") or ($server_channels eq "") ) {
-	print "Usage: perlbot.pl \"username\" \"real name\" \"server address\" \"server port\" \"server channel\"\n";
-	exit 1;
+for ($username, $real_name, $server_address, $server_port, $server_channels) {
+	if ( !defined ) {
+		print "Usage: perlbot.pl \"username\" \"real name\" \"server address\" \"server port\" \"server channel\"\n";
+		exit 1;
+	}
 }
 
 my $nickname         = $username;
@@ -55,9 +52,10 @@ sub said {
 	open my $history_fh, '>>', "$history_file" or print "Could not open history file, Error $?\n";
 	print $history_fh "<$who_said> $body\n" or print "Failed to append to $history_file, Error $?\n";
 	close $history_fh or print "Could not close $history_file, Error $?\n";
-	#print "@said_args\n";
 	my @results = capture($^X, "said.pl", @said_args);
-
+	foreach (@results) {
+		print "$_";
+	}
 	print 'Results: ' . @results . "\n";
 
 	foreach my $line (@results) {

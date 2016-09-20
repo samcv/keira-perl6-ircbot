@@ -14,26 +14,27 @@ my($who_said, $body, $username) = @ARGV;
 
 my $history_file;
 
-if( $body eq q() and $who_said eq q() ) {
+if ( !defined $body or !defined $who_said ) {
 	print "Did not receive any input\n";
 	print "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
 }
 # Trunicate history file only if the bot's username is set.
-elsif ( $username ne q() ) {
+elsif ( defined $username ) {
 	$history_file  = $username . '_history.txt';
 	my $history_file_length = '20';
 
-	`tail -n $history_file_length ./$history_file | sponge ./$history_file` and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
 }
 
 sub sed_replace {
-	my $first = $body;
+	my ($sed_called_text) = @_;
+	my $first = $sed_called_text;
 	$first =~ s{^s/(.+)/.*}{$1};
-	print "first: $first\n";
-	my $second = $body;
+	my $second = $sed_called_text;
 	$second =~ s{^s/.+/(.*)}{$1};
-	print "second: $second\n";
+	print "first: $first\tsecond: $second\n";
 	my $replaced_who;
 	my $replaced_said;
 	print "Trying to open $history_file\n";
@@ -45,7 +46,7 @@ sub sed_replace {
 		$history_who =~ s{^<(.+)>.*}{$1};
 		my $history_said = $history_line;
 		$history_said =~ s/<.+> //;
-		if (($history_said =~ m/$first/i) && ($history_said !~ m{^s/} )){
+		if ( $history_said =~ m/$first/i and $history_said !~ m{^s/} ) {
 			print "Found match\n";
 			$replaced_said = $history_said;
 			$replaced_said =~ s{\Q$first\E}{$second}ig;
@@ -54,10 +55,9 @@ sub sed_replace {
 		}
 	}
 	close $history_fh;
-	if ( $replaced_said ne q() ) {
-		print "%<$replaced_who> $replaced_said\n";
+	if ( defined $replaced_said ) {
+		return $replaced_who, $replaced_said;
 	}
-	exit 0;
 }
 
 sub get_url {
@@ -77,7 +77,7 @@ sub get_url {
 
 	while  ( defined (my $curl_line = <$CURL_OUT>) ) {
 		# Detect end of header
-		if ( ( $curl_line =~ /^<\s*$/) && ($end_of_header == 0) ) {
+		if ( $curl_line =~ /^<\s*$/ and $end_of_header == 0 ) {
 			$end_of_header = 1;
 			print "end of header detected\n";
 			if($is_text == 0) {
@@ -117,7 +117,7 @@ sub get_url {
 			}
 		}
 
-		if ( ($end_of_header == 1) && ($curl_line =~ s/\s*<\/title>.*//i) ) {
+		if ( $end_of_header == 1 and $curl_line =~ s/\s*<\/title>.*//i ) {
 			$title_end_line   = $line_no;
 			# If <title> and </title> are on the same line, just set that one line to the aray
 			if ($title_end_line == $title_start_line) {
@@ -133,7 +133,7 @@ sub get_url {
 			last;
 		}
 		# If we are between <title> and </title>, push it to the array
-		elsif ( ($end_of_header == 1) && ($title_start_line != '-1' ) && ($title_start_line != $line_no ) ) {
+		elsif ( $end_of_header == 1 and $title_start_line != '-1' and $title_start_line != $line_no ) {
 			push @curl_title, $curl_line;
 		}
 		$line_no = $line_no + 1;
@@ -166,7 +166,7 @@ sub get_url {
 		chomp $title;
 		if ( !$title ) {
 			print "No title found\n";
-			exit;
+			return;
 		}
 
 		# Remove starting whitespace
@@ -183,6 +183,7 @@ sub get_url {
 }
 
 sub find_url {
+	my ($find_url_caller_text) = @_;
 	my ($url, $new_location_text);
 	my $max_title_length  = 120;
 	my $error_line        =   0;
@@ -194,7 +195,7 @@ sub find_url {
 		}
 	);
 
-	my $num_found = $url_finder->find( \$body );
+	my $num_found = $url_finder->find( \$find_url_caller_text );
 
 	print "Numfound: $num_found\n";
 	if ($num_found >= 1) {
@@ -202,16 +203,16 @@ sub find_url {
 
 		if ( $url eq '%' ) {
 			print "Empty url found!\n";
-			exit;
+			return;
 		}
 		if ( $url =~ m/;/xms ) {
 			print "URL has comma(s) in it!\n";
 			$url =~ s/;/%3B/xmsg;
-			exit;
+			return;
 		}
 		if ( $url =~ m/\$/xms ) {
 			print "\$ sign found\n";
-			exit;
+			return;
 		}
 
 		my($url_title, $url_new_location, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($url);
@@ -225,13 +226,13 @@ sub find_url {
 		if ( $url_is_cloudflare == 1 ) {
 			$cloudflare_text = ' **CLOUDFLARE**';
 		}
-		my $cookie_text = q();
+		my $cookie_text;
 		if ( $url_has_cookie >= 1 ) {
 			$cookie_text = q( ) . q(@);
 		}
 		if ($url_is_404) {
 			print "# $error_line # " . $cookie_text . $cloudflare_text . "$url\n";
-			exit;
+			return;
 		}
 		if ($url_is_text) {
 			my $short_title = substr $url_title, 0, $max_title_length;
@@ -240,7 +241,7 @@ sub find_url {
 			}
 			if ( !$url_title ) {
 				print "No title found right before print\n";
-				exit;
+				return;
 			}
 
 			if ( $url_new_location ne q(%) ) {
@@ -251,10 +252,10 @@ sub find_url {
 				$new_location_text = q();
 			}
 
-			print "%[ $url_title ]" . $new_location_text . $cloudflare_text . $cookie_text . "\n";
+			return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
 		}
 		else {
-			exit;
+			return;
 		}
 	}
 }
@@ -263,13 +264,15 @@ sub find_url {
 if ( $body =~ /[.]bots.*/xms ) {
 	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
 }
-#START
-#END
 # Sed functionality. Only called if the bot's username is set and it can know what history file
 # to use.
-elsif ( $body =~ m{^s/.+/} and $username ne q() ) {
-	sed_replace;
+elsif ( $body =~ m{^s/.+/} and defined $username ) {
+	my ($sed_who, $sed_text) = sed_replace($body);
+	print "%<$sed_who> $sed_text\n";
 }
 else {
-	find_url;
+	my ($url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text, $main_cookie_text) = find_url($body);
+	if ($url_success) {
+		print "%[ $main_url_title ]" . $main_new_location_text . $main_cloudflare_text . $main_cookie_text . "\n";
+	}
 }

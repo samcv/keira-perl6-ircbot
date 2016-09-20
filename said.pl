@@ -45,26 +45,22 @@ sub tell_nick {
 		open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
 		print $tell_fh "<$tell_nick_who> >$tell_who< $tell_text\n" or print "Failed to append to $tell_file, Error $?\n";
 		close $tell_fh or print "Could not close $tell_file, Error $?\n";
-		return;
 	}
-	else {
-		open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $?\n";
-		my @tell_lines = <$tell_fh>;
-		close $tell_fh;
-		open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
-		foreach my $tell_line (@tell_lines) {
-			if ( $tell_line =~ /<.+> >$tell_nick_who</ ) {
-				print "%$tell_line";
-				return;
-			}
-			else {
-				print $tell_fh "$tell_line";
-			}
+	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+	my @tell_lines = <$tell_fh>;
+	close $tell_fh;
+	open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+	my $has_been_said = 0;
+	foreach my $tell_line (@tell_lines) {
+		if ( $tell_line =~ /<.+> >$tell_nick_who</ and !$has_been_said ) {
+			print "%$tell_line";
+			$has_been_said = 1;
 		}
-		close $tell_fh;
+		else {
+			print $tell_fh "$tell_line";
+		}
 	}
-
-
+	close $tell_fh;
 }
 
 sub sed_replace {

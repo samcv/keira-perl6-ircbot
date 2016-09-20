@@ -28,6 +28,45 @@ elsif ( defined $username ) {
 	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
 }
 
+sub tell_nick {
+	my ($tell_nick_body, $tell_nick_who) = @_;
+	chomp $tell_nick_body;
+	my $tell_file = $username . '_tell.txt';
+	if ($tell_nick_body =~ /^!tell/ ) {
+		if ($body !~ /^!tell \S+ \S+/ ) {
+				print "%Usage: !tell nick \"message to tell them\"\n";
+				return;
+		}
+		my $tell_who = $tell_nick_body;
+		my $tell_text = $tell_nick_body;
+		$tell_who =~ s/!tell (\S+) .*/$1/;
+		$tell_text =~ s/!tell \S+ (.*)/$1/;
+		print "tell_who: $tell_who tell_text: $tell_text\n";
+		open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+		print $tell_fh "<$tell_nick_who> >$tell_who< $tell_text\n" or print "Failed to append to $tell_file, Error $?\n";
+		close $tell_fh or print "Could not close $tell_file, Error $?\n";
+		return;
+	}
+	else {
+		open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+		my @tell_lines = <$tell_fh>;
+		close $tell_fh;
+		open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+		foreach my $tell_line (@tell_lines) {
+			if ( $tell_line =~ /<.+> >$tell_nick_who</ ) {
+				print "%$tell_line";
+				return;
+			}
+			else {
+				print $tell_fh "$tell_line";
+			}
+		}
+		close $tell_fh;
+	}
+
+
+}
+
 sub sed_replace {
 	my ($sed_called_text) = @_;
 	my $first = $sed_called_text;
@@ -62,7 +101,7 @@ sub sed_replace {
 
 sub get_url {
 	my ($sub_url) = @_;
-
+	print "get_url, url is $sub_url\n";
 	my ($is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare) = ('0')  x '5';
 	my ($title, $title_start_line, $title_end_line)                     = ('-1') x '3';
 	my $line_no       =  1;
@@ -80,30 +119,31 @@ sub get_url {
 		if ( $curl_line =~ /^<\s*$/ and $end_of_header == 0 ) {
 			$end_of_header = 1;
 			print "end of header detected\n";
-			if($is_text == 0) {
+			if ($is_text == 0 ) {
 				print "Stopping because it's not text\n";
-				close $CURL_OUT;
 				last;
+			}
+			if (defined $new_location) {
+				print "Stopping at end of header because there's a new location to go to\n";
 			}
 		}
 		# Detect content type
-		if ( $curl_line =~ /^<\s*Content-Type: text/i and $end_of_header == 0 ) {
+		if ( $curl_line =~ /^<\s*Content-Type:\s*text/i and $end_of_header == 0 ) {
 			print "Curl header says it's text\n";
 			$is_text = 1;
 		}
-		elsif ( $curl_line =~ /^<\s*CF-RAY:/ixms ) {
+		elsif ( $curl_line =~ /^<\s*CF-RAY:/i ) {
 			$is_cloudflare = 1;
 			print "Cloudflare = 1\n";
 		}
-		elsif ( $curl_line =~ /^<\s*Set-Cookie.*/ixms ) {
+		elsif ( $curl_line =~ /^<\s*Set-Cookie.*/i ) {
 			$has_cookie++;
 		}
-		elsif ( $curl_line =~ /^<\s*Location:\s*/ixms ) {
+		elsif ( $curl_line =~ /^<\s*Location:\s*/i ) {
 			$new_location = $curl_line;
-			$new_location =~ s/^<\s*Location:\s*//ixms;
-			$new_location =~ s/^\s+|\s+$//gxms;
-			print "New Location: $new_location\n";
-			last;
+			$new_location =~ s/^<\s*Location:\s*//i;
+			$new_location =~ s/^\s+|\s+$//g;
+			print "sub get_url New Location: $new_location\n";
 		}
 
 		# Find the Title
@@ -113,6 +153,8 @@ sub get_url {
 			if ( $curl_line =~ /^\s*$/) {
 			}
 			else {
+				# Remove trailing and ending whitespace
+				$curl_line =~ s/^\s*(.+)\s*$/$1/;
 				push @curl_title, $curl_line;
 			}
 		}
@@ -128,17 +170,21 @@ sub get_url {
 			if ( $curl_line =~ /^\s*$/) {
 			}
 			else {
+				# Remove trailing and ending whitespace
+				$curl_line =~ s/^\s*(.+)\s*$/$1/;
 				push @curl_title, $curl_line;
 			}
 			last;
 		}
 		# If we are between <title> and </title>, push it to the array
 		elsif ( $end_of_header == 1 and $title_start_line != '-1' and $title_start_line != $line_no ) {
+			# Remove trailing and ending whitespace
+			$curl_line =~ s/^\s*(.+)\s*$/$1/;
 			push @curl_title, $curl_line;
 		}
 		$line_no = $line_no + 1;
 	}
-	close($CURL_OUT);
+	close $CURL_OUT;
 	# Print out $is_text and $title's values
 	print '$is_text = ' . "$is_text\n";
 	print '@curl_title    = ' . @curl_title . "\n";
@@ -169,12 +215,10 @@ sub get_url {
 			return;
 		}
 
-		# Remove starting whitespace
-		$title =~ s/^\s*//xmsg;
-		# Remove ending whitespace
-		$title =~s/\s*$//g;
+		# Replace newlines with two spaces
+		#$title =~ s/\n/  /g;
 		# Replace carriage returns with two spaces
-		$title =~ s/\r/ /xmsg;
+		$title =~ s/\r/  /g;
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
 	}
@@ -205,23 +249,24 @@ sub find_url {
 			print "Empty url found!\n";
 			return;
 		}
-		if ( $url =~ m/;/xms ) {
+		if ( $url =~ m/;/ ) {
 			print "URL has comma(s) in it!\n";
 			$url =~ s/;/%3B/xmsg;
 			return;
 		}
-		if ( $url =~ m/\$/xms ) {
+		if ( $url =~ m/\$/ ) {
 			print "\$ sign found\n";
 			return;
 		}
 
 		my($url_title, $url_new_location, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($url);
-		print "New location: $url_new_location\n";
+		print "sub find_url New Location: $url_new_location\n";
 		if ( defined $url_new_location ) {
 			my $temp_var;
 			($url_title, $temp_var, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($url_new_location);
-		}
+			print "sub find_url Second New Location: $url_new_location\n";
 
+		}
 		my $cloudflare_text = q();
 		if ( $url_is_cloudflare == 1 ) {
 			$cloudflare_text = ' **CLOUDFLARE**';
@@ -231,7 +276,7 @@ sub find_url {
 			$cookie_text = q( ) . q(@);
 		}
 		if ($url_is_404) {
-			print "# $error_line # " . $cookie_text . $cloudflare_text . "$url\n";
+			print "find_url return, 404 error\n";
 			return;
 		}
 		if ($url_is_text) {
@@ -240,11 +285,11 @@ sub find_url {
 				$url_title = $short_title . ' ...';
 			}
 			if ( !$url_title ) {
-				print "No title found right before print\n";
+				print "find_url return, No title found right before print\n";
 				return;
 			}
 
-			if ( $url_new_location ne q(%) ) {
+			if (defined $url_new_location ) {
 				$new_location_text = " >> $url_new_location";
 				chomp $new_location_text;
 			}
@@ -255,12 +300,15 @@ sub find_url {
 			return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
 		}
 		else {
+			print "find_url return, it's not text\n";
 			return;
 		}
 	}
 }
 # MAIN
 # .bots reporting functionality
+tell_nick($body, $who_said);
+
 if ( $body =~ /[.]bots.*/xms ) {
 	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
 }
@@ -268,11 +316,15 @@ if ( $body =~ /[.]bots.*/xms ) {
 # to use.
 elsif ( $body =~ m{^s/.+/} and defined $username ) {
 	my ($sed_who, $sed_text) = sed_replace($body);
+	$sed_text = substr $sed_text, 0, 150;
 	print "%<$sed_who> $sed_text\n";
 }
 else {
 	my ($url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text, $main_cookie_text) = find_url($body);
-	if ($url_success) {
+	if ($url_success and $main_url_title != -1 ) {
 		print "%[ $main_url_title ]" . $main_new_location_text . $main_cloudflare_text . $main_cookie_text . "\n";
+	}
+	else {
+		print "No url success\n";
 	}
 }

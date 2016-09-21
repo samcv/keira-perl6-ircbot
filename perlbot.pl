@@ -4,9 +4,8 @@ use English; use utf8;     use feature 'unicode_strings';
 
 package PerlBot;
 use base qw(Bot::BasicBot);
-our $VERSION = 0.2;
+our $VERSION = 0.3;
 
-use IPC::System::Simple qw(system capture);
 use Encode  'decode_utf8';
 
 # Debian package list:
@@ -22,13 +21,11 @@ use Encode  'decode_utf8';
 # Arch perl package list:
 # 	perl-uri-find
 
-# CPAN package: IPC::System::Options
-
 my ($username, $real_name, $server_address, $server_port, $server_channels) = @ARGV;
 
 for ($username, $real_name, $server_address, $server_port, $server_channels) {
 	if ( !defined ) {
-		print "Usage: perlbot.pl \"username\" \"real name\" \"server address\" \"server port\" \"server channel\"\n";
+		print "Usage: perlbot.in.pl \"username\" \"real name\" \"server address\" \"server port\" \"server channel\"\n";
 		exit 1;
 	}
 }
@@ -48,30 +45,33 @@ sub said {
 	my $body     = $message->{body};
 	my $who_said = $message->{who};
 	my @to_say   = ();
-	push my (@said_args), $who_said, $body, $username;
+
+	push my (@said_args), 'said.pl', $who_said, $body, $username;
+
+	open my $SAID_OUT, '-|', "perl", @said_args;
+
+	while ( defined (my $line = <$SAID_OUT> ) ) {
+
+		if ($line =~ s/^%//) {
+			$self->say(
+				{   channel => ( $self->channels ),
+					body    => decode_utf8($line),
+				}
+			);
+		}
+		else {
+			print $line;
+		}
+
+	}
+	close $SAID_OUT;
+
 	open my $history_fh, '>>', "$history_file" or print "Could not open history file, Error $?\n";
 	print $history_fh "<$who_said> $body\n" or print "Failed to append to $history_file, Error $?\n";
 	close $history_fh or print "Could not close $history_file, Error $?\n";
-	my @results = capture($^X, "said.pl", @said_args);
-	foreach (@results) {
-		print "$_";
-	}
-	print 'Results: ' . @results . "\n";
 
-	foreach my $line (@results) {
-		if ($line =~ /^%/) {
-			$line =~ s/^%//;
-			chomp $line;
-			push @to_say, decode_utf8($line);
-		}
-	}
-	foreach my $line_to_say (@to_say) {
-		$self->say(
-			{   channel => ( $self->channels ),
-				body    => "$line_to_say\n",
-			}
-		);
-	}
+	return;
+
 }
 
 ### actual bot ###

@@ -5,8 +5,10 @@ use warnings;
 use LWP::Simple;
 use URI::Find;
 use HTML::Entities;
+use IPC::Open3;
 use feature 'unicode_strings';
 use utf8;
+
 our $VERSION = 0.3;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 
@@ -106,9 +108,9 @@ sub get_url {
 	my @curl_title;
 	my $user_agent    = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
 	my $curl_max_time =  '5';
+	push my @curl_args, '--compressed', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-v', '--url', $sub_url;
 
-	open my $CURL_OUT, '-|', "curl --compressed -A \"$user_agent\" --max-time $curl_max_time --no-buffer -v --url \"$sub_url\" 2>&1"
-		or print "Could not open a pipe for curl\n" and return;
+	open3 ( my $CURL_IN, my $CURL_OUT, undef, "curl", @curl_args);
 
 	while  ( defined (my $curl_line = <$CURL_OUT>) ) {
 		# Detect end of header
@@ -181,6 +183,7 @@ sub get_url {
 		$line_no = $line_no + 1;
 	}
 	close $CURL_OUT;
+	print "Ended on line $line_no\n";
 	# Print out $is_text and $title's values
 	print '$is_text = ' . "$is_text\n";
 	print '@curl_title    = ' . @curl_title . "\n";

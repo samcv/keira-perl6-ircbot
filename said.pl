@@ -15,19 +15,16 @@ my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my($who_said, $body, $username) = @ARGV;
 
 my $history_file;
+my $history_file_length = '20';
 
 if ( !defined $body or !defined $who_said ) {
 	print "Did not receive any input\n";
 	print "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
 }
-# Trunicate history file only if the bot's username is set.
 elsif ( defined $username ) {
 	$history_file  = $username . '_history.txt';
-	my $history_file_length = '20';
-
-	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
-	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
+	$history_file_length = '20';
 }
 
 sub tell_nick {
@@ -82,8 +79,8 @@ sub sed_replace {
 		my $history_who = $history_line;
 		$history_who =~ s{^<(.+)>.*}{$1};
 		my $history_said = $history_line;
-		$history_said =~ s/<.+> //;
-		if ( $history_said =~ m/$first/i and $history_said !~ m{^s/} ) {
+		$history_said =~ s{<.+> }{};
+		if ( $history_said =~ m{$first}i and $history_said !~ m{^s/} ) {
 			print "Found match\n";
 			$replaced_said = $history_said;
 			$replaced_said =~ s{\Q$first\E}{$second}ig;
@@ -108,13 +105,13 @@ sub get_url {
 	my @curl_title;
 	my $user_agent    = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
 	my $curl_max_time =  '5';
-	push my @curl_args, '--compressed', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-v', '--url', $sub_url;
+	push my @curl_args, '--compressed', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-i', '--url', $sub_url;
 
-	open3 ( my $CURL_IN, my $CURL_OUT, undef, "curl", @curl_args);
+	open3 ( undef, my $CURL_OUT, undef, "curl", @curl_args);
 
 	while  ( defined (my $curl_line = <$CURL_OUT>) ) {
 		# Detect end of header
-		if ( $curl_line =~ /^<\s*$/ and $end_of_header == 0 ) {
+		if ( $curl_line =~ /^\s*$/ and $end_of_header == 0 ) {
 			$end_of_header = 1;
 			print "end of header detected\n";
 			if ($is_text == 0 ) {
@@ -126,20 +123,20 @@ sub get_url {
 			}
 		}
 		# Detect content type
-		if ( $curl_line =~ /^<\s*Content-Type:\s*text/i and $end_of_header == 0 ) {
+		if ( $curl_line =~ /^\s*Content-Type:\s*text/i and $end_of_header == 0 ) {
 			print "Curl header says it's text\n";
 			$is_text = 1;
 		}
-		elsif ( $curl_line =~ /^<\s*CF-RAY:/i ) {
+		elsif ( $curl_line =~ /^\s*CF-RAY:/i ) {
 			$is_cloudflare = 1;
 			print "Cloudflare = 1\n";
 		}
-		elsif ( $curl_line =~ /^<\s*Set-Cookie.*/i ) {
+		elsif ( $curl_line =~ /^\s*Set-Cookie.*/i ) {
 			$has_cookie++;
 		}
-		elsif ( $curl_line =~ /^<\s*Location:\s*/i ) {
+		elsif ( $curl_line =~ /^\s*Location:\s*/i ) {
 			$new_location = $curl_line;
-			$new_location =~ s/^<\s*Location:\s*//i;
+			$new_location =~ s/^\s*Location:\s*//i;
 			$new_location =~ s/^\s+|\s+$//g;
 			print "sub get_url New Location: $new_location\n";
 		}
@@ -227,14 +224,14 @@ sub get_url {
 
 sub find_url {
 	my ($find_url_caller_text) = @_;
-	my ($url, $new_location_text);
+	my ($find_url_url, $new_location_text);
 	my $max_title_length  = 120;
 	my $error_line        =   0;
 
 	my $url_finder = URI::Find->new(
 		sub {
 			my ( $uri, $orig_uri ) = @_;
-			$url = $orig_uri;
+			$find_url_url = $orig_uri;
 		}
 	);
 
@@ -244,21 +241,21 @@ sub find_url {
 	if ($num_found >= 1) {
 		print "Number of URL's found $num_found \n";
 
-		if ( $url eq '%' ) {
+		if ( $find_url_url eq '%' ) {
 			print "Empty url found!\n";
 			return;
 		}
-		if ( $url =~ m/;/ ) {
+		if ( $find_url_url =~ m/;/ ) {
 			print "URL has comma(s) in it!\n";
-			$url =~ s/;/%3B/xmsg;
+			$find_url_url =~ s/;/%3B/xmsg;
 			return;
 		}
-		if ( $url =~ m/\$/ ) {
+		if ( $find_url_url =~ m/\$/ ) {
 			print "\$ sign found\n";
 			return;
 		}
 
-		my($url_title, $url_new_location, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($url);
+		my($url_title, $url_new_location, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($find_url_url);
 		print "sub find_url New Location: $url_new_location\n";
 		if ( defined $url_new_location ) {
 			my $temp_var;
@@ -280,7 +277,7 @@ sub find_url {
 		}
 		if ($url_is_text) {
 			my $short_title = substr $url_title, 0, $max_title_length;
-			if ( $url_title ne $short_title and $url !~ m{twitter[.]com/.+/status} ) {
+			if ( $url_title ne $short_title and $find_url_url !~ m{twitter[.]com/.+/status} ) {
 				$url_title = $short_title . ' ...';
 			}
 			if ( !$url_title ) {
@@ -306,7 +303,6 @@ sub find_url {
 }
 # MAIN
 # .bots reporting functionality
-tell_nick($body, $who_said);
 
 if ( $body =~ /[.]bots.*/xms ) {
 	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
@@ -315,8 +311,13 @@ if ( $body =~ /[.]bots.*/xms ) {
 # to use.
 elsif ( $body =~ m{^s/.+/} and defined $username ) {
 	my ($sed_who, $sed_text) = sed_replace($body);
-	$sed_text = substr $sed_text, 0, 150;
-	print "%<$sed_who> $sed_text\n";
+	my $sed_short_text = substr $sed_text, 0, 150;
+	if ( $sed_text ne $sed_short_text ) {
+		$sed_text = $sed_short_text . ' ...';
+	}
+	if ( defined $sed_who and defined $sed_text) {
+		print "%<$sed_who> $sed_text\n";
+	}
 }
 else {
 	my ($url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text, $main_cookie_text) = find_url($body);
@@ -326,4 +327,10 @@ else {
 	else {
 		print "No url success\n";
 	}
+}
+# Trunicate history file only if the bot's username is set.
+if ( defined $username ) {
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
+	  tell_nick($body, $who_said);
 }

@@ -51,7 +51,7 @@ sub tell_nick {
 	open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
 	my $has_been_said = 0;
 	foreach my $tell_line (@tell_lines) {
-		if ( $tell_line =~ /<.+> >$tell_nick_who</ and !$has_been_said ) {
+		if ( $tell_line =~ /^<.+> >$tell_nick_who</ and !$has_been_said ) {
 			print "%$tell_line";
 			$has_been_said = 1;
 		}
@@ -65,9 +65,9 @@ sub tell_nick {
 sub sed_replace {
 	my ($sed_called_text) = @_;
 	my $first = $sed_called_text;
-	$first =~ s{^s/(.+)/.*}{$1};
+	$first =~ s{^s/(.+?)/.*}{$1};
 	my $second = $sed_called_text;
-	$second =~ s{^s/.+/(.*)}{$1};
+	$second =~ s{^s/.+?/(.*)}{$1};
 	print "first: $first\tsecond: $second\n";
 	my $replaced_who;
 	my $replaced_said;

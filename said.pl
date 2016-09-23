@@ -54,8 +54,7 @@ sub convert_from_secs {
 	$secs = $secs_to_convert;
 	return $secs, $mins, $hours, $days, $years;
 }
-my ($S, $M, $H, $D, $Y) = convert_from_secs(50000060);
-print "$S secs $M mins $H hours $D days $Y years\n";
+
 sub tell_nick {
 	my ($tell_nick_body, $tell_nick_who) = @_;
 	chomp $tell_nick_body;

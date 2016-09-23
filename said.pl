@@ -34,32 +34,28 @@ sub convert_from_secs {
 	my $SECS_PER_HOUR = 60  * $SECS_PER_MIN;
 	my $SECS_PER_DAY  = 24  * $SECS_PER_HOUR;
 	my $SECS_PER_YEAR = 365 * $SECS_PER_DAY;
+	my ($secs, $mins, $hours, $days, $years);
+	if ( $secs_to_convert >= $SECS_PER_YEAR ) {
+		$years = $secs_to_convert / $SECS_PER_YEAR;
+		$secs_to_convert = $secs_to_convert - $years * $SECS_PER_YEAR;
+	}
 	if ( $secs_to_convert >= $SECS_PER_DAY ) {
-		my $days  = $secs_to_convert / $SECS_PER_DAY;
-		my $hours = ($secs_to_convert - $days * $SECS_PER_DAY) / $SECS_PER_HOUR;
-		my $mins = ($secs_to_convert - $days * $SECS_PER_DAY - $hours * $SECS_PER_HOUR) / $SECS_PER_MIN;
-		my $secs = $secs_to_convert - $days * $SECS_PER_DAY - $hours * $SECS_PER_HOUR - $mins * $SECS_PER_MIN;
-		return $secs, $mins, $hours, $days;
+		$days  = $secs_to_convert / $SECS_PER_DAY;
+		$secs_to_convert = $secs_to_convert - $days * $SECS_PER_DAY;
 	}
-	elsif ( $secs_to_convert >= $SECS_PER_HOUR ) {
-		my $hours = $secs_to_convert / $SECS_PER_HOUR;
-		my $mins  = ($secs_to_convert - $hours * $SECS_PER_HOUR ) / $SECS_PER_MIN;
-		my $secs  = $secs_to_convert - $hours * $SECS_PER_HOUR - $mins * $SECS_PER_MIN;
-		return $secs, $mins, $hours;
+	if ( $secs_to_convert >= $SECS_PER_HOUR ) {
+		$hours = $secs_to_convert / $SECS_PER_HOUR;
+		$secs_to_convert = $secs_to_convert - $hours * $SECS_PER_HOUR;
 	}
-	elsif ( $secs_to_convert >= $SECS_PER_MIN ) {
-		my $mins = $secs_to_convert / $SECS_PER_MIN;
-		my $secs = $secs_to_convert - ($mins * $SECS_PER_MIN);
-		print "secs: $secs mins: $mins\n";
-		return $secs, $mins;
+	if ( $secs_to_convert >= $SECS_PER_MIN ) {
+		$mins = $secs_to_convert / $SECS_PER_MIN;
+		$secs_to_convert = $secs_to_convert - $mins * $SECS_PER_MIN;
 	}
-
-	else {
-		my $secs = $secs_to_convert;
-		return $secs;
-	}
+	$secs = $secs_to_convert;
+	return $secs, $mins, $hours, $days, $years;
 }
-
+my ($S, $M, $H, $D, $Y) = convert_from_secs(50000060);
+print "$S secs $M mins $H hours $D days $Y years\n";
 sub tell_nick {
 	my ($tell_nick_body, $tell_nick_who) = @_;
 	chomp $tell_nick_body;
@@ -82,7 +78,7 @@ sub tell_nick {
 		my $tell_who = $tell_nick_body;
 		my $tell_text = $tell_nick_body;
 		my $tell_remind_when = $tell_nick_body;
-		if ($tell_nick_body =~ /^!tell in / ) {
+		if ($tell_nick_body =~ /^!tell in / or $tell_nick_body =~ /^!tell help/) {
 			$tell_remind_when =~ s/!tell in (\S+) .*/$1/;
 			$tell_text        =~ s/!tell in \S+ \S+ (.*)/$1/;
 			$tell_who         =~ s/!tell in \S+ (\S+) .*/$1/;
@@ -143,7 +139,6 @@ sub tell_nick {
 			elsif ( defined $tell_nick_time_mins ) {
 				print "%$tell_line [$tell_nick_time_mins" . "m " . $tell_nick_time_secs . "s ago]\n";
 			}
-
 			else {
 				print "%$tell_line [$tell_nick_time_diff" . "s ago]\n";
 			}

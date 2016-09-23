@@ -17,6 +17,17 @@ my($who_said, $body, $username) = @ARGV;
 my $history_file;
 my $history_file_length = '20';
 
+my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and ' .
+                'repo url. Also posts the page title of any website pasted in channel';
+
+my $tell_help_text    = "Usage: !tell nick \"message to tell them\"";
+my $tell_in_help_text = "Usage: !tell in 100d/h/m/s nickname \"message to tell them\"";
+
+my $SECS_PER_MIN  = 60;
+my $SECS_PER_HOUR = 60  * $SECS_PER_MIN;
+my $SECS_PER_DAY  = 24  * $SECS_PER_HOUR;
+my $SECS_PER_YEAR = 365 * $SECS_PER_DAY;
+
 if ( !defined $body or !defined $who_said ) {
 	print "Did not receive any input\n";
 	print "Usage: said.pl nickname \"text\" botname\n";
@@ -30,11 +41,8 @@ elsif ( defined $username ) {
 sub convert_from_secs {
 	use integer;
 	my ($secs_to_convert) = @_;
-	my $SECS_PER_MIN  = 60;
-	my $SECS_PER_HOUR = 60  * $SECS_PER_MIN;
-	my $SECS_PER_DAY  = 24  * $SECS_PER_HOUR;
-	my $SECS_PER_YEAR = 365 * $SECS_PER_DAY;
 	my ($secs, $mins, $hours, $days, $years);
+	
 	if ( $secs_to_convert >= $SECS_PER_YEAR ) {
 		$years = $secs_to_convert / $SECS_PER_YEAR;
 		$secs_to_convert = $secs_to_convert - $years * $SECS_PER_YEAR;
@@ -60,42 +68,32 @@ sub tell_nick {
 	chomp $tell_nick_body;
 	# Make sure this sub uses integer division so we get proper results
 	use integer;
-	my $SECS_PER_MIN  = 60;
-	my $SECS_PER_HOUR = 60  * $SECS_PER_MIN;
-	my $SECS_PER_DAY  = 24  * $SECS_PER_HOUR;
-	my $SECS_PER_YEAR = 365 * $SECS_PER_DAY;
+
+	my $tell_return;
 
 	my $tell_file = $username . '_tell.txt';
-	my $tell_nick_time_called = time;
+	my $tell_time_called = time;
 	my $tell_remind_time = 0;
 
-	if ($tell_nick_body =~ /^!tell/ ) {
-		if ($body !~ /^!tell \S+ \S+/ ) {
-				print "%Usage: !tell nick \"message to tell them\"\n";
-				return;
-		}
+	if ($tell_nick_body =~ /^!tell/ and ( $body =~ /^!tell \S+ \S+/ or $body !~ /^!tell help/ ) ) {
 		my $tell_who = $tell_nick_body;
 		my $tell_text = $tell_nick_body;
 		my $tell_remind_when = $tell_nick_body;
-		if ($tell_nick_body =~ /^!tell in / or $tell_nick_body =~ /^!tell help/) {
+		if ( $tell_nick_body =~ /^!tell in / or $tell_nick_body =~ /^!tell help/ ) {
 			$tell_remind_when =~ s/!tell in (\S+) .*/$1/;
 			$tell_text        =~ s/!tell in \S+ \S+ (.*)/$1/;
 			$tell_who         =~ s/!tell in \S+ (\S+) .*/$1/;
 			if ( $tell_remind_when =~ s/^([0-9]+)m$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_MIN + $tell_nick_time_called;
+				$tell_remind_time = $tell_remind_when * $SECS_PER_MIN + $tell_time_called;
 			}
 			elsif ( $tell_remind_when =~ s/^([0-9]+)s$/$1/ ) {
-				$tell_remind_time = $tell_remind_when + $tell_nick_time_called;
+				$tell_remind_time = $tell_remind_when + $tell_time_called;
 			}
 			elsif ( $tell_remind_when =~ s/^([0-9]+)d$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_DAY + $tell_nick_time_called;
+				$tell_remind_time = $tell_remind_when * $SECS_PER_DAY + $tell_time_called;
 			}
 			elsif ( $tell_remind_when =~ s/^([0-9]+)h$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_HOUR + $tell_nick_time_called;
-			}
-			else {
-				print "%Usage: !tell in 100d/h/m/s nickname \"message to tell them\"\n";
-				return;
+				$tell_remind_time = $tell_remind_when * $SECS_PER_HOUR + $tell_time_called;
 			}
 
 		}
@@ -103,9 +101,11 @@ sub tell_nick {
 			$tell_who =~ s/!tell (\S+) .*/$1/;
 			$tell_text =~ s/!tell \S+ (.*)/$1/;
 		}
-		print "tell_nick_time_called: $tell_nick_time_called tell_remind_time: $tell_remind_time tell_who: $tell_who tell_text: $tell_text\n";
+		print "tell_nick_time_called: $tell_time_called tell_remind_time: $tell_remind_time " .
+		      "tell_who: $tell_who tell_text: $tell_text\n";
 		open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
-		print $tell_fh "$tell_nick_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n" or print "Failed to append to $tell_file, Error $?\n";
+		print $tell_fh "$tell_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
+			or print "Failed to append to $tell_file, Error $?\n";
 		close $tell_fh or print "Could not close $tell_file, Error $?\n";
 	}
 	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $?\n";
@@ -117,29 +117,28 @@ sub tell_nick {
 		chomp $tell_line;
 		my $time_var = $tell_line;
 		$time_var =~ s/^[0-9]+ ([0-9]+) <.+>.*/$1/;
-		if ( $tell_line =~ /^[0-9]+ [0-9]+ <.+> >$tell_nick_who</ and !$has_been_said and $time_var < $tell_nick_time_called ) {
+		if ( $tell_line =~ /^[0-9]+ [0-9]+ <.+> >$tell_nick_who</ and !$has_been_said and $time_var < $tell_time_called ) {
 			chomp $tell_line;
 			my $tell_nick_time_tell = $tell_line;
-
-			if ($time_var > $tell_nick_time_called) {
-				return;
-			}
 			$tell_nick_time_tell =~ s/^([0-9]+) .*/$1/;
 			$tell_line =~ s{^[0-9]+ [0-9]+ }{};
-			my $tell_nick_time_diff = $tell_nick_time_called - $tell_nick_time_tell;
-			print "Tell nick time diff: $tell_nick_time_diff\n";
-			my ($tell_nick_time_secs, $tell_nick_time_mins, $tell_nick_time_hours, $tell_nick_time_days) = convert_from_secs($tell_nick_time_diff);
-			if ( defined $tell_nick_time_days ) {
-				print "%$tell_line [$tell_nick_time_days" . "d $tell_nick_time_hours" . "h $tell_nick_time_mins" . "m " . $tell_nick_time_secs . "s ago]\n";
+			my $tell_time_diff = $tell_time_called - $tell_nick_time_tell;
+			print "Tell nick time diff: $tell_time_diff\n";
+			my ($tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years) = convert_from_secs($tell_time_diff);
+			if ( defined $tell_years ) {
+				$tell_return = "$tell_line [$tell_years" . "y $tell_days" . "d $tell_hours" . "h $tell_mins" . "m " . $tell_secs . "s ago]";
 			}
-			elsif ( defined $tell_nick_time_hours ) {
-				print "%$tell_line [$tell_nick_time_hours" . "h $tell_nick_time_mins" . "m " . $tell_nick_time_secs . "s ago]\n";
+			elsif ( defined $tell_days ) {
+				$tell_return =  "$tell_line [$tell_days" . "d $tell_hours" . "h $tell_mins" . "m " . $tell_secs . "s ago]";
 			}
-			elsif ( defined $tell_nick_time_mins ) {
-				print "%$tell_line [$tell_nick_time_mins" . "m " . $tell_nick_time_secs . "s ago]\n";
+			elsif ( defined $tell_hours ) {
+				$tell_return =  "$tell_line [$tell_hours" . "h $tell_mins" . "m " . $tell_secs . "s ago]";
+			}
+			elsif ( defined $tell_mins ) {
+				$tell_return = "$tell_line [$tell_mins" . "m " . $tell_secs . "s ago]";
 			}
 			else {
-				print "%$tell_line [$tell_nick_time_diff" . "s ago]\n";
+				$tell_return = "$tell_line [$tell_time_diff" . "s ago]";
 			}
 			$has_been_said = 1;
 		}
@@ -148,6 +147,12 @@ sub tell_nick {
 		}
 	}
 	close $tell_fh;
+	if ( defined $tell_return ) {
+		return $tell_return;
+	}
+	else {
+		return;
+	}
 }
 
 sub sed_replace {
@@ -391,21 +396,23 @@ sub find_url {
 }
 # MAIN
 # .bots reporting functionality
-
-if ( $body =~ /[.]bots.*/xms ) {
+if ( $body =~ /[.]bots.*/ ) {
 	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
 }
 # Sed functionality. Only called if the bot's username is set and it can know what history file
 # to use.
 elsif ( $body =~ m{^s/.+/} and defined $username ) {
 	my ($sed_who, $sed_text) = sed_replace($body);
-	my $sed_short_text = substr $sed_text, 0, 150;
+	my $sed_short_text = substr $sed_text, 0, 250;
 	if ( $sed_text ne $sed_short_text ) {
 		$sed_text = $sed_short_text . ' ...';
 	}
 	if ( defined $sed_who and defined $sed_text) {
 		print "%<$sed_who> $sed_text\n";
 	}
+}
+elsif ( $body =~ /^!help/i ) {
+	print "%$help_text\n";
 }
 else {
 	my ($url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text, $main_cookie_text) = find_url($body);
@@ -416,9 +423,18 @@ else {
 		print "No url success\n";
 	}
 }
-# Trunicate history file only if the bot's username is set.
 if ( defined $username ) {
+	# Trunicate history file only if the bot's username is set.
 	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
 	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
-	tell_nick($body, $who_said);
+	if ( $body =~ /^!tell/ and ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) ) {
+		  print "%$tell_help_text\n";
+	}
+	elsif ( $body =~ /^!tell in/ and $body !~ /!tell in ([0-9]+)[smhd] / ) {
+		print "%$tell_in_help_text\n";
+	}
+	my ($tell_to_say) = tell_nick($body, $who_said);
+	if ( defined $tell_to_say ) {
+		print "%$tell_to_say\n";
+	}
 }

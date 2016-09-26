@@ -14,7 +14,7 @@ my $repo_url = 'https://gitlab.com/samcv/perlbot';
 
 my($who_said, $body, $username) = @ARGV;
 
-my $history_file;
+my ($history_file, $tell_file);
 my $history_file_length = '20';
 
 my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and ' .
@@ -28,6 +28,8 @@ my $SECS_PER_HOUR = 60  * $SECS_PER_MIN;
 my $SECS_PER_DAY  = 24  * $SECS_PER_HOUR;
 my $SECS_PER_YEAR = 365 * $SECS_PER_DAY;
 
+my $said_time_called = time;
+
 if ( !defined $body or !defined $who_said ) {
 	print "Did not receive any input\n";
 	print "Usage: said.pl nickname \"text\" botname\n";
@@ -35,14 +37,15 @@ if ( !defined $body or !defined $who_said ) {
 }
 elsif ( defined $username ) {
 	$history_file  = $username . '_history.txt';
+	$tell_file     = $username . '_tell.txt';
 	$history_file_length = '20';
 }
 
 sub convert_from_secs {
-	use integer;
 	my ($secs_to_convert) = @_;
+	use integer;
 	my ($secs, $mins, $hours, $days, $years);
-	
+
 	if ( $secs_to_convert >= $SECS_PER_YEAR ) {
 		$years = $secs_to_convert / $SECS_PER_YEAR;
 		$secs_to_convert = $secs_to_convert - $years * $SECS_PER_YEAR;
@@ -64,50 +67,9 @@ sub convert_from_secs {
 }
 
 sub tell_nick {
-	my ($tell_nick_body, $tell_nick_who) = @_;
-	chomp $tell_nick_body;
-	# Make sure this sub uses integer division so we get proper results
-	use integer;
-
+	my ($tell_nick_who) = @_;
 	my $tell_return;
 
-	my $tell_file = $username . '_tell.txt';
-	my $tell_time_called = time;
-	my $tell_remind_time = 0;
-
-	if ($tell_nick_body =~ /^!tell/ and ( $body =~ /^!tell \S+ \S+/ or $body !~ /^!tell help/ ) ) {
-		my $tell_who = $tell_nick_body;
-		my $tell_text = $tell_nick_body;
-		my $tell_remind_when = $tell_nick_body;
-		if ( $tell_nick_body =~ /^!tell in / or $tell_nick_body =~ /^!tell help/ ) {
-			$tell_remind_when =~ s/!tell in (\S+) .*/$1/;
-			$tell_text        =~ s/!tell in \S+ \S+ (.*)/$1/;
-			$tell_who         =~ s/!tell in \S+ (\S+) .*/$1/;
-			if ( $tell_remind_when =~ s/^([0-9]+)m$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_MIN + $tell_time_called;
-			}
-			elsif ( $tell_remind_when =~ s/^([0-9]+)s$/$1/ ) {
-				$tell_remind_time = $tell_remind_when + $tell_time_called;
-			}
-			elsif ( $tell_remind_when =~ s/^([0-9]+)d$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_DAY + $tell_time_called;
-			}
-			elsif ( $tell_remind_when =~ s/^([0-9]+)h$/$1/ ) {
-				$tell_remind_time = $tell_remind_when * $SECS_PER_HOUR + $tell_time_called;
-			}
-
-		}
-		else {
-			$tell_who =~ s/!tell (\S+) .*/$1/;
-			$tell_text =~ s/!tell \S+ (.*)/$1/;
-		}
-		print "tell_nick_time_called: $tell_time_called tell_remind_time: $tell_remind_time " .
-		      "tell_who: $tell_who tell_text: $tell_text\n";
-		open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
-		print $tell_fh "$tell_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
-			or print "Failed to append to $tell_file, Error $?\n";
-		close $tell_fh or print "Could not close $tell_file, Error $?\n";
-	}
 	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $?\n";
 	my @tell_lines = <$tell_fh>;
 	close $tell_fh;
@@ -117,12 +79,12 @@ sub tell_nick {
 		chomp $tell_line;
 		my $time_var = $tell_line;
 		$time_var =~ s/^[0-9]+ ([0-9]+) <.+>.*/$1/;
-		if ( $tell_line =~ /^[0-9]+ [0-9]+ <.+> >$tell_nick_who</ and !$has_been_said and $time_var < $tell_time_called ) {
+		if ( $tell_line =~ /^[0-9]+ [0-9]+ <.+> >$tell_nick_who</ and !$has_been_said and $time_var < $said_time_called ) {
 			chomp $tell_line;
 			my $tell_nick_time_tell = $tell_line;
 			$tell_nick_time_tell =~ s/^([0-9]+) .*/$1/;
 			$tell_line =~ s{^[0-9]+ [0-9]+ }{};
-			my $tell_time_diff = $tell_time_called - $tell_nick_time_tell;
+			my $tell_time_diff = $said_time_called - $tell_nick_time_tell;
 			print "Tell nick time diff: $tell_time_diff\n";
 			my ($tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years) = convert_from_secs($tell_time_diff);
 			if ( defined $tell_years ) {
@@ -154,14 +116,53 @@ sub tell_nick {
 		return;
 	}
 }
+sub tell_nick_command {
+	my ($tell_nick_body, $tell_nick_who) = @_;
+	chomp $tell_nick_body;
+	my $tell_remind_time = 0;
+
+	my $tell_who = $tell_nick_body;
+	my $tell_text = $tell_nick_body;
+	my $tell_remind_when = $tell_nick_body;
+	if ( $tell_nick_body =~ /^!tell in / or $tell_nick_body =~ /^!tell help/ ) {
+		$tell_remind_when =~ s/!tell in (\S+) .*/$1/;
+		$tell_text        =~ s/!tell in \S+ \S+ (.*)/$1/;
+		$tell_who         =~ s/!tell in \S+ (\S+) .*/$1/;
+		if ( $tell_remind_when =~ s/^([0-9]+)m$/$1/ ) {
+			$tell_remind_time = $tell_remind_when * $SECS_PER_MIN + $said_time_called;
+		}
+		elsif ( $tell_remind_when =~ s/^([0-9]+)s$/$1/ ) {
+			$tell_remind_time = $tell_remind_when + $said_time_called;
+		}
+		elsif ( $tell_remind_when =~ s/^([0-9]+)d$/$1/ ) {
+			$tell_remind_time = $tell_remind_when * $SECS_PER_DAY + $said_time_called;
+		}
+		elsif ( $tell_remind_when =~ s/^([0-9]+)h$/$1/ ) {
+			$tell_remind_time = $tell_remind_when * $SECS_PER_HOUR + $said_time_called;
+		}
+
+	}
+	else {
+		$tell_who =~ s/!tell (\S+) .*/$1/;
+		$tell_text =~ s/!tell \S+ (.*)/$1/;
+	}
+	print "tell_nick_time_called: $said_time_called tell_remind_time: $tell_remind_time " .
+	      "tell_who: $tell_who tell_text: $tell_text\n";
+	open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $?\n";
+	print $tell_fh "$said_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
+		or print "Failed to append to $tell_file, Error $?\n";
+
+	close $tell_fh or print "Could not close $tell_file, Error $?\n";
+	return;
+}
 
 sub sed_replace {
 	my ($sed_called_text) = @_;
-	my $first = $sed_called_text;
-	$first =~ s{^s/(.+?)/.*}{$1};
-	my $second = $sed_called_text;
-	$second =~ s{^s/.+?/(.*)}{$1};
-	print "first: $first\tsecond: $second\n";
+	my $before = $sed_called_text;
+	$before =~ s{^s/(.+?)/.*}{$1};
+	my $after = $sed_called_text;
+	$after =~ s{^s/.+?/(.*)}{$1};
+	print "first: $before\tsecond: $after\n";
 	my $replaced_who;
 	my $replaced_said;
 	print "Trying to open $history_file\n";
@@ -173,10 +174,18 @@ sub sed_replace {
 		$history_who =~ s{^<(.+)>.*}{$1};
 		my $history_said = $history_line;
 		$history_said =~ s{<.+> }{};
-		if ( $history_said =~ m{$first}i and $history_said !~ m{^s/} ) {
+		if ( $history_said =~ m{$before}i and $history_said !~ m{^s/} ) {
 			print "Found match\n";
 			$replaced_said = $history_said;
-			$replaced_said =~ s{\Q$first\E}{$second}ig;
+			# Allow use of [abc] to match either a,b or c
+			if ( $before =~ m{^\[.*\]$} ) {
+				my $before_2 = $before;
+				$before_2 =~ s{^\[(.*)\]$}{$1};
+				$replaced_said =~ s{[$before_2]}{$after}ig;
+			}
+			else {
+				$replaced_said =~ s{\Q$before\E}{$after}ig;
+			}
 			$replaced_who = $history_who;
 			print "replaced_said: $replaced_said\n";
 		}
@@ -198,77 +207,88 @@ sub get_url {
 	my @curl_title;
 	my $user_agent    = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
 	my $curl_max_time =  '5';
-	push my @curl_args, '--compressed', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-i', '--url', $sub_url;
+	push my @curl_args, '--compressed', '-s', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-i', '--url', $sub_url;
 
 	open3 ( undef, my $CURL_OUT, undef, "curl", @curl_args);
 
 	while  ( defined (my $curl_line = <$CURL_OUT>) ) {
-		# Detect end of header
-		if ( $curl_line =~ /^\s*$/ and $end_of_header == 0 ) {
-			$end_of_header = 1;
-			print "end of header detected\n";
-			if ($is_text == 0 ) {
-				print "Stopping because it's not text\n";
-				last;
+		chomp $curl_line;
+		# Remove starting and ending whitespace
+		$curl_line =~ s/^\s*(.*)\s*$/$1/;
+		# Processing done only within the header
+		if ( $end_of_header == 0 ) {
+			# Detect end of header
+			if ( $curl_line =~ /^\s*$/ ) {
+				$end_of_header = 1;
+				print "end of header detected\n";
+				if ($is_text == 0 ) {
+					print "Stopping because it's not text\n";
+					last;
+				}
+				if (defined $new_location) {
+					print "Stopping at end of header because there's a new location to go to\n";
+				}
 			}
-			if (defined $new_location) {
-				print "Stopping at end of header because there's a new location to go to\n";
+			# Detect content type
+			elsif ( $curl_line =~ /^\s*Content-Type:\s*text/i ) {
+				print "Curl header says it's text\n";
+				$is_text = 1;
+			}
+			elsif ( $curl_line =~ /^\s*CF-RAY:/i ) {
+				$is_cloudflare = 1;
+				print "Cloudflare = 1\n";
+			}
+			elsif ( $curl_line =~ /^\s*Set-Cookie.*/i ) {
+				$has_cookie++;
+			}
+			elsif ( $curl_line =~ /^\s*Location:\s*/i ) {
+				$new_location = $curl_line;
+				$new_location =~ s/^\s*Location:\s*//i;
+				$new_location =~ s/^\s+|\s+$//g;
+				print "sub get_url New Location: $new_location\n";
 			}
 		}
-		# Detect content type
-		if ( $curl_line =~ /^\s*Content-Type:\s*text/i and $end_of_header == 0 ) {
-			print "Curl header says it's text\n";
-			$is_text = 1;
-		}
-		elsif ( $curl_line =~ /^\s*CF-RAY:/i ) {
-			$is_cloudflare = 1;
-			print "Cloudflare = 1\n";
-		}
-		elsif ( $curl_line =~ /^\s*Set-Cookie.*/i ) {
-			$has_cookie++;
-		}
-		elsif ( $curl_line =~ /^\s*Location:\s*/i ) {
-			$new_location = $curl_line;
-			$new_location =~ s/^\s*Location:\s*//i;
-			$new_location =~ s/^\s+|\s+$//g;
-			print "sub get_url New Location: $new_location\n";
-		}
-
-		# Find the Title
-		if ( $end_of_header == 1 and $curl_line =~ s/.*<title>\s?//i ) {
+		# If <title> and </title> are on the same line
+		elsif ( $curl_line =~ /<title>/i and $curl_line =~ m{</title>}i ) {
 			$title_start_line = $line_no;
-			# If the line is empty don't push it to the array
-			if ( $curl_line =~ /^\s*$/) {
+			$title_end_line   = $line_no;
+			$curl_line =~ s{.*<title>(.*)</title>.*}{$1}i;
+			# If <title> and </title> are on the same line, just set that one line to the aray
+			print "Title start and end is on $line_no\n";
+			push @curl_title, $curl_line;
+			last;
+		}
+		# Find the title start
+		elsif ( $curl_line =~ /<title>/i ) {
+			$title_start_line = $line_no;
+			$curl_line =~ s/.*<title>//i;
+			# Remove trailing and ending whitespace
+			$curl_line =~ s/^\s*(.*)\s*$/$1/;
+			 # If the line is empty don't push it to the array
+			if ( $curl_line !~ /^\s*$/ ) {
+				push @curl_title, $curl_line;
+				print "At start of title, line $line_no is \"$curl_line\"\n";
 			}
 			else {
-				# Remove trailing and ending whitespace
-				$curl_line =~ s/^\s*(.+)\s*$/$1/;
-				push @curl_title, $curl_line;
+				print "Found start of title on line $line_no, line only contains <title>\n";
 			}
 		}
-
-		if ( $end_of_header == 1 and $curl_line =~ s/\s*<\/title>.*//i ) {
+		# Find the title end
+		elsif ( $curl_line =~ m{</title>} and $curl_line !~ /^\s*$/ ) {
 			$title_end_line   = $line_no;
-			# If <title> and </title> are on the same line, just set that one line to the aray
-			if ($title_end_line == $title_start_line) {
-				$curl_title[0] = $curl_line;
-				last;
-			}
-			# If the line is empty don't push it to the array
-			if ( $curl_line =~ /^\s*$/) {
-			}
-			else {
-				# Remove trailing and ending whitespace
-				$curl_line =~ s/^\s*(.+)\s*$/$1/;
-				push @curl_title, $curl_line;
-			}
+			$curl_line =~ s{</title>.*}{}i;
+			# Remove trailing and ending whitespace
+			$curl_line =~ s/^\s*(.*)\s*$/$1/;
+			push @curl_title, $curl_line;
+			print "At end of title, line $line_no is \"$curl_line\"\n";
 			last;
 		}
 		# If we are between <title> and </title>, push it to the array
-		elsif ( $end_of_header == 1 and $title_start_line != '-1' and $title_start_line != $line_no ) {
+		elsif ( $title_start_line != '-1' and $curl_line !~ /^\s*$/ ) {
 			# Remove trailing and ending whitespace
-			$curl_line =~ s/^\s*(.+)\s*$/$1/;
+			$curl_line =~ s/^\s*(.*)\s*$/$1/;
 			push @curl_title, $curl_line;
+			print "Between title, line $line_no is \"$curl_line\"\n";
 		}
 		$line_no = $line_no + 1;
 	}
@@ -295,7 +315,8 @@ sub get_url {
 		}
 		else {
 			$title = join q( ), @curl_title;
-			print "$title  url is\n";
+			#$title =~ s/^\s*(.*)\s$/$1/;
+			print "Title is: \"$title\"\n";
 		}
 
 		chomp $title;
@@ -349,7 +370,7 @@ sub find_url {
 		}
 
 		my($url_title, $url_new_location, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($find_url_url);
-		print "sub find_url New Location: $url_new_location\n";
+		if (defined $url_new_location) { print "sub find_url New Location: $url_new_location\n"; }
 		if ( defined $url_new_location ) {
 			my $temp_var;
 			($url_title, $temp_var, $url_is_text, $url_is_cloudflare, $url_has_cookie, $url_is_404) = get_url($url_new_location);
@@ -385,7 +406,6 @@ sub find_url {
 			else {
 				$new_location_text = q();
 			}
-
 			return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
 		}
 		else {
@@ -403,7 +423,7 @@ if ( $body =~ /[.]bots.*/ ) {
 # to use.
 elsif ( $body =~ m{^s/.+/} and defined $username ) {
 	my ($sed_who, $sed_text) = sed_replace($body);
-	my $sed_short_text = substr $sed_text, 0, 250;
+	my $sed_short_text = substr $sed_text, 0, '250';
 	if ( $sed_text ne $sed_short_text ) {
 		$sed_text = $sed_short_text . ' ...';
 	}
@@ -414,27 +434,40 @@ elsif ( $body =~ m{^s/.+/} and defined $username ) {
 elsif ( $body =~ /^!help/i ) {
 	print "%$help_text\n";
 }
-else {
+# Find and get URL's page title
+# Don't get the page header if there's a ## in front of it
+if ( $body !~ m{\#\#\s*http.?://} ) {
 	my ($url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text, $main_cookie_text) = find_url($body);
-	if ($url_success and $main_url_title != -1 ) {
+	if ($url_success != -1 and defined $main_url_title ) {
 		print "%[ $main_url_title ]" . $main_new_location_text . $main_cloudflare_text . $main_cookie_text . "\n";
 	}
 	else {
 		print "No url success\n";
 	}
 }
+
 if ( defined $username ) {
-	# Trunicate history file only if the bot's username is set.
-	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
-	  and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
-	if ( $body =~ /^!tell/ and ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) ) {
-		  print "%$tell_help_text\n";
+	if ( $body =~ /^!tell/ ) {
+		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
+			  print "%$tell_help_text\n";
+		}
+		elsif ( $body =~ /^!tell in/ and $body !~ /!tell in ([0-9]+)[smhd] / ) {
+			print "%$tell_in_help_text\n";
+		}
+		else {
+			print "Calling tell_nick_command\n";
+			tell_nick_command( $body, $who_said );
+		}
 	}
-	elsif ( $body =~ /^!tell in/ and $body !~ /!tell in ([0-9]+)[smhd] / ) {
-		print "%$tell_in_help_text\n";
-	}
-	my ($tell_to_say) = tell_nick($body, $who_said);
+
+	print "Calling tell_nick\n";
+	my ($tell_to_say) = tell_nick( $who_said );
 	if ( defined $tell_to_say ) {
+		print "Tell to say line next\n";
 		print "%$tell_to_say\n";
 	}
+	# Trunicate history file only if the bot's username is set.
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+		and print "Problem with tail ./$history_file | sponge ./$history_file, Error $?\n";
 }
+exit;

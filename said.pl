@@ -200,14 +200,12 @@ sub get_url {
 	my ($sub_url) = @_;
 	print "get_url, url is $sub_url\n";
 	my ($is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare) = ('0')  x '5';
-	my ($title, $title_start_line, $title_end_line)                     = ('-1') x '3';
-	my $line_no       =  1;
-
-	my $new_location;
+	my ($title, $title_start_line, $title_end_line, $new_location);
 	my @curl_title;
+	my $line_no       = '1';
 	my $user_agent    = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
-	my $curl_max_time =  '5';
-	push my @curl_args, '--compressed', '-s', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-i', '--url', $sub_url;
+	my $curl_max_time = '5';
+	my @curl_args     = ('--compressed', '-s', '-A', $user_agent, '--max-time', $curl_max_time, '--no-buffer', '-i', '--url', $sub_url);
 
 	open3 ( undef, my $CURL_OUT, undef, "curl", @curl_args);
 
@@ -230,21 +228,20 @@ sub get_url {
 				}
 			}
 			# Detect content type
-			elsif ( $curl_line =~ /^\s*Content-Type:\s*text/i ) {
+			elsif ( $curl_line =~ /^Content-Type:\s*text/i ) {
 				print "Curl header says it's text\n";
 				$is_text = 1;
 			}
-			elsif ( $curl_line =~ /^\s*CF-RAY:/i ) {
+			elsif ( $curl_line =~ /^CF-RAY:/i ) {
 				$is_cloudflare = 1;
 				print "Cloudflare = 1\n";
 			}
-			elsif ( $curl_line =~ /^\s*Set-Cookie.*/i ) {
+			elsif ( $curl_line =~ /^Set-Cookie.*/i ) {
 				$has_cookie++;
 			}
-			elsif ( $curl_line =~ /^\s*Location:\s*/i ) {
+			elsif ( $curl_line =~ /^Location:\s*/i ) {
 				$new_location = $curl_line;
-				$new_location =~ s/^\s*Location:\s*//i;
-				$new_location =~ s/^\s+|\s+$//g;
+				$new_location =~ s/^Location:\s*(\S*)\s*$/$1/i;
 				print "sub get_url New Location: $new_location\n";
 			}
 		}
@@ -284,7 +281,7 @@ sub get_url {
 			last;
 		}
 		# If we are between <title> and </title>, push it to the array
-		elsif ( $title_start_line != '-1' and $curl_line !~ /^\s*$/ ) {
+		elsif ( defined $title_start_line and $curl_line !~ /^\s*$/ ) {
 			# Remove trailing and ending whitespace
 			$curl_line =~ s/^\s*(.*)\s*$/$1/;
 			push @curl_title, $curl_line;
@@ -299,7 +296,7 @@ sub get_url {
 	print '@curl_title    = ' . @curl_title . "\n";
 	print '$end_of_header = ' . "$end_of_header\n";
 	# If we found the header, print out what line it starts on
-	if ( $title_start_line != '-1' or $title_end_line != 1 ) {
+	if ( defined $title_start_line or defined $title_end_line ) {
 		print '$title_start_line = ' . "$title_start_line  " . '$title_end_line = ' . $title_end_line . "\n";
 	}
 	else {
@@ -320,7 +317,7 @@ sub get_url {
 		}
 
 		chomp $title;
-		if ( !$title ) {
+		if ( !defined $title ) {
 			print "No title found\n";
 			return;
 		}

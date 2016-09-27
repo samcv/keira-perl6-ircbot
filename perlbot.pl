@@ -11,18 +11,17 @@ use base qw(Bot::BasicBot);
 our $VERSION = 0.3.2;
 use Encode 'decode_utf8';
 
+# CPAN package list:
+#	 URL::Search
 # Debian package list:
 # 	perl curl moreutils
 # Debian perl package list:
-# 	liburi-find-perl libpoe-component-sslify-perl libbot-basicbot-perl
-# 	libipc-system-simple-perl
+# 	libpoe-component-sslify-perl libbot-basicbot-perl
 
 # Arch package list:
 # 	perl curl moreutils
 # Arch AUR package list:
 # 	perl-bot-basicbot
-# Arch perl package list:
-# 	perl-uri-find
 binmode( STDOUT, ":utf8" ) or die "Failed to set binmode on STDOUT, Error $?\n";
 
 #binmode( STDOUT, ":encoding(UTF-8)" ) or die "Failed to set binmode on STDOUT, Error $?\n";
@@ -79,8 +78,7 @@ sub said {
 	}
 	close $SAID_OUT;
 	open my $history_fh, '>>', "$history_file" or print "Could not open history file, Error $?\n";
-	binmode( $history_fh, ":utf8" )
-		or die "Failed to set binmode on $history_fh, Error $?\n";
+	# Don't set binmode on $history_fh or it will break
 	print $history_fh "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $?\n";
 	close $history_fh or print "Could not close $history_file, Error $?\n";

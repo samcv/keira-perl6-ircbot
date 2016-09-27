@@ -2,8 +2,6 @@
 # said perlbot script
 use strict;
 use warnings;
-use LWP::Simple;
-use URI::Find;
 use HTML::Entities 'decode_entities';
 use IPC::Open3 'open3';
 
@@ -11,8 +9,10 @@ use feature 'unicode_strings';
 use utf8;
 use English;
 use Encode 'decode_utf8';
-binmode( STDOUT, ":encoding(UTF-8)" ) or die "Failed to set binmode on STDOUT, Error $?\n";
+use Time::Seconds;
+use URL::Search 'extract_urls';
 
+binmode STDOUT, ':encoding(UTF-8)' or print "Failed to set binmode on STDOUT, Error $ERRNO\n";
 our $VERSION = 0.3.2;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my ( $who_said, $body, $username ) = @ARGV;
@@ -21,18 +21,13 @@ utf8::decode($body);
 utf8::decode($username);
 
 my ( $history_file, $tell_file );
-my $history_file_length = '20';
+my $history_file_length = 20;
 
 my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
 	. 'repo url. Also posts the page title of any website pasted in channel';
 
 my $tell_help_text    = 'Usage: !tell nick \"message to tell them\"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
-
-my $SECS_PER_MIN  = '60';
-my $SECS_PER_HOUR = '60' * $SECS_PER_MIN;
-my $SECS_PER_DAY  = '24' * $SECS_PER_HOUR;
-my $SECS_PER_YEAR = '365' * $SECS_PER_DAY;
 
 
 my $said_time_called = time;
@@ -45,7 +40,7 @@ if ( !defined $body or !defined $who_said ) {
 elsif ( defined $username ) {
 	$history_file        = $username . '_history.txt';
 	$tell_file           = $username . '_tell.txt';
-	$history_file_length = '20';
+	$history_file_length = 20;
 }
 
 sub convert_from_secs {
@@ -53,21 +48,21 @@ sub convert_from_secs {
 	use integer;
 	my ( $secs, $mins, $hours, $days, $years );
 
-	if ( $secs_to_convert >= $SECS_PER_YEAR ) {
-		$years           = $secs_to_convert / $SECS_PER_YEAR;
-		$secs_to_convert = $secs_to_convert - $years * $SECS_PER_YEAR;
+	if ( $secs_to_convert >= ONE_YEAR ) {
+		$years           = $secs_to_convert / ONE_YEAR;
+		$secs_to_convert = $secs_to_convert - $years * ONE_YEAR;
 	}
-	if ( $secs_to_convert >= $SECS_PER_DAY ) {
-		$days            = $secs_to_convert / $SECS_PER_DAY;
-		$secs_to_convert = $secs_to_convert - $days * $SECS_PER_DAY;
+	if ( $secs_to_convert >= ONE_DAY ) {
+		$days            = $secs_to_convert / ONE_DAY;
+		$secs_to_convert = $secs_to_convert - $days * ONE_DAY;
 	}
-	if ( $secs_to_convert >= $SECS_PER_HOUR ) {
-		$hours           = $secs_to_convert / $SECS_PER_HOUR;
-		$secs_to_convert = $secs_to_convert - $hours * $SECS_PER_HOUR;
+	if ( $secs_to_convert >= ONE_HOUR ) {
+		$hours           = $secs_to_convert / ONE_HOUR;
+		$secs_to_convert = $secs_to_convert - $hours * ONE_HOUR;
 	}
-	if ( $secs_to_convert >= $SECS_PER_MIN ) {
-		$mins            = $secs_to_convert / $SECS_PER_MIN;
-		$secs_to_convert = $secs_to_convert - $mins * $SECS_PER_MIN;
+	if ( $secs_to_convert >= ONE_MINUTE ) {
+		$mins            = $secs_to_convert / ONE_MINUTE;
+		$secs_to_convert = $secs_to_convert - $mins * ONE_MINUTE;
 	}
 	$secs = $secs_to_convert;
 	return $secs, $mins, $hours, $days, $years;
@@ -78,13 +73,13 @@ sub tell_nick {
 	my $tell_return;
 
 	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode( $tell_fh, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $tell_fh, Error' . "$?\n";
+	binmode( $tell_fh, ':encoding(UTF-8)' )
+		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my @tell_lines = <$tell_fh>;
 	close $tell_fh or print "Could not close $tell_file, Error $ERRNO\n";
 	open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode( $tell_fh, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $tell_fh, Error' . "$?\n";
+	binmode( $tell_fh, ':encoding(UTF-8)' )
+		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my $has_been_said = 0;
 
 	foreach my $tell_line (@tell_lines) {
@@ -158,16 +153,16 @@ sub tell_nick_command {
 		$tell_text =~ s/!tell in \S+ \S+ (.*)/$1/;
 		$tell_who =~ s/!tell in \S+ (\S+) .*/$1/;
 		if ( $tell_remind_when =~ s/^(\d+)m$/$1/ ) {
-			$tell_remind_time = $tell_remind_when * $SECS_PER_MIN + $said_time_called;
+			$tell_remind_time = $tell_remind_when * ONE_MINUTE + $said_time_called;
 		}
 		elsif ( $tell_remind_when =~ s/^(\d+)s$/$1/ ) {
 			$tell_remind_time = $tell_remind_when + $said_time_called;
 		}
 		elsif ( $tell_remind_when =~ s/^(\d+)d$/$1/ ) {
-			$tell_remind_time = $tell_remind_when * $SECS_PER_DAY + $said_time_called;
+			$tell_remind_time = $tell_remind_when * ONE_DAY + $said_time_called;
 		}
 		elsif ( $tell_remind_when =~ s/^(\d+)h$/$1/ ) {
-			$tell_remind_time = $tell_remind_when * $SECS_PER_HOUR + $said_time_called;
+			$tell_remind_time = $tell_remind_when * ONE_HOUR + $said_time_called;
 		}
 
 	}
@@ -179,7 +174,7 @@ sub tell_nick_command {
 		. "tell_who: $tell_who tell_text: $tell_text\n";
 	open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
 	binmode( $tell_fh, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $tell_fh, Error' . "$?\n";
+		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	print $tell_fh "$said_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
 		or print "Failed to append to $tell_file, Error $ERRNO\n";
 
@@ -200,7 +195,7 @@ sub sed_replace {
 	print "Trying to open $history_file\n";
 	open my $history_fh, '<', "$history_file" or print "Could not open $history_file for read\n";
 	binmode( $history_fh, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $history_fh, Error' . "$?\n";
+		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
 	while ( defined( my $history_line = <$history_fh> ) ) {
 		chomp $history_line;
@@ -232,7 +227,7 @@ sub sed_replace {
 		open my $history_fh, '>>', "$history_file"
 			or print "Could not open $history_file for write\n";
 		binmode( $history_fh, ":encoding(UTF-8)" )
-			or die 'Failed to set binmode on $history_fh, Error' . "$?\n";
+			or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 		print $history_fh "<$replaced_who> $replaced_said\n";
 		close $history_fh;
 		return $replaced_who, $replaced_said;
@@ -241,6 +236,7 @@ sub sed_replace {
 
 sub get_url_title {
 	my ($sub_url) = @_;
+	my @header_array;
 	print "get_url_title, url is $sub_url\n";
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = ('0') x '5';
 	my ( $title, $title_start_line, $title_end_line, $new_location );
@@ -255,10 +251,10 @@ sub get_url_title {
 		'--url',        $sub_url
 	);
 
-	open3( undef, my $CURL_OUT, undef, "curl", @curl_args )
+	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
-	binmode( $CURL_OUT, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $CURL_OUT, Error ' . "$?\n";
+	binmode( $CURL_OUT, ':encoding(UTF-8)' )
+		or print 'Failed to set binmode on $CURL_OUT, Error ' . "$ERRNO\n";
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 		chomp $curl_line;
 
@@ -267,6 +263,7 @@ sub get_url_title {
 
 		# Processing done only within the header
 		if ( $end_of_header == 0 ) {
+			push @header_array, $curl_line;
 
 			# Detect end of header
 			if ( $curl_line =~ /^\s*$/ ) {
@@ -274,6 +271,7 @@ sub get_url_title {
 				print "end of header detected\n";
 				if ( $is_text == 0 ) {
 					print "Stopping because it's not text\n";
+					print join( "\n", @header_array );
 					last;
 				}
 				if ( defined $new_location ) {
@@ -282,7 +280,7 @@ sub get_url_title {
 			}
 
 			# Detect content type
-			elsif ( $curl_line =~ /^Content-Type:\s*text/i ) {
+			elsif ( $curl_line =~ /^Content-Type:.*text/i ) {
 				print "Curl header says it's text\n";
 				$is_text = 1;
 			}
@@ -301,10 +299,10 @@ sub get_url_title {
 		}
 
 		# If <title> and </title> are on the same line
-		elsif ( $curl_line =~ /<title>/i and $curl_line =~ m{</title>}i ) {
+		elsif ( $curl_line =~ /<title.*?>/i and $curl_line =~ m{</title>}i ) {
 			$title_start_line = $line_no;
 			$title_end_line   = $line_no;
-			$curl_line =~ s{.*<title>(.*)</title>.*}{$1}i;
+			$curl_line =~ s{.*<title.*?>(.*)</title>.*}{$1}i;
 
 			# If <title> and </title> are on the same line, just set that one line to the aray
 			print "Title start and end is on $line_no\n";
@@ -313,9 +311,9 @@ sub get_url_title {
 		}
 
 		# Find the title start
-		elsif ( $curl_line =~ /<title>/i ) {
+		elsif ( $curl_line =~ /<title.*?>/i ) {
 			$title_start_line = $line_no;
-			$curl_line =~ s/.*<title>//i;
+			$curl_line =~ s/.*<title.*?>//i;
 
 			# Remove trailing and ending whitespace
 			$curl_line =~ s/^\s*(.*)\s*$/$1/;
@@ -349,6 +347,12 @@ sub get_url_title {
 			$curl_line =~ s/^\s*(.*)\s*$/$1/;
 			push @curl_title, $curl_line;
 			print "Between title, line $line_no is \"$curl_line\"\n";
+		}
+
+		# If we reach the </head> or <body> then we know we have gone too far
+		elsif ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
+			print "We reached the <body> or the </head> element and couldn't find any header\n";
+			last;
 		}
 		$line_no = $line_no + 1;
 	}
@@ -405,25 +409,19 @@ sub get_url_title {
 sub find_url {
 	my ($find_url_caller_text) = @_;
 	my ( $find_url_url, $new_location_text );
-	my @find_url_array;
 	my $max_title_length = 120;
 	my $error_line       = 0;
-	my $uri_re           = URI::Find->uri_re;
-	print "URI_RE $uri_re\n";
-	my $url_finder = URI::Find->new(
-		sub {
-			my ( $uri, $orig_uri ) = @_;
-			$find_url_url = $orig_uri;
-			push @find_url_array, $orig_uri;
-			print "Found $find_url_url\n";
+	my @find_url_array   = extract_urls $find_url_caller_text;
+
+	foreach my $single_url (@find_url_array) {
+		if ( $single_url !~ m{^ftp://} ) {
+			$find_url_url = $single_url;
+			print "Found $find_url_url as the first url\n";
+			last;
 		}
-	);
+	}
 
-	my $num_found = $url_finder->find( \$find_url_caller_text );
-
-	print "Numfound: $num_found\n";
-	if ( $num_found >= 1 ) {
-		print "Number of URL's found $num_found \n";
+	if ( defined $find_url_url ) {
 
 		if ( $find_url_url eq '%' ) {
 			print "Empty url found!\n";
@@ -563,7 +561,8 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 	}
 }
 
-if ( defined $tell_file ) {
+if ( $username ne '' ) {
+	print "I think the username is defined: \"$username\"\n";
 	if ( $body =~ /^!tell/ ) {
 		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
 			print "%$tell_help_text\n";

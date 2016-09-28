@@ -8,7 +8,7 @@ use feature 'unicode_strings';
 
 package PerlBot;
 use base qw(Bot::BasicBot);
-our $VERSION = 0.3.2;
+our $VERSION = 0.4;
 use Encode 'decode_utf8';
 
 # CPAN package list:
@@ -22,7 +22,7 @@ use Encode 'decode_utf8';
 # 	perl curl moreutils
 # Arch AUR package list:
 # 	perl-bot-basicbot
-binmode( STDOUT, ":utf8" ) or die "Failed to set binmode on STDOUT, Error $?\n";
+binmode( STDOUT, ':encoding(UTF-8)' ) or die "Failed to set binmode on STDOUT, Error $?\n";
 
 #binmode( STDOUT, ":encoding(UTF-8)" ) or die "Failed to set binmode on STDOUT, Error $?\n";
 my ( $username, $real_name, $server_address, $server_port, $server_channels ) = @ARGV;
@@ -59,7 +59,7 @@ sub said {
 		or print 'Cannot open $SAID_OUT ' . "pipe, Error $?\n";
 
 	binmode( $SAID_OUT, ":encoding(UTF-8)" )
-		or die 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
+		or print 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
 
 	while ( defined( my $line = <$SAID_OUT> ) ) {
 

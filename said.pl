@@ -13,12 +13,9 @@ use Time::Seconds;
 use URL::Search 'extract_urls';
 
 binmode STDOUT, ':encoding(UTF-8)' or print "Failed to set binmode on STDOUT, Error $ERRNO\n";
-our $VERSION = 0.3.2;
+our $VERSION = 0.4;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my ( $who_said, $body, $username ) = @ARGV;
-utf8::decode($who_said);
-utf8::decode($body);
-utf8::decode($username);
 
 my ( $history_file, $tell_file );
 my $history_file_length = 20;
@@ -41,7 +38,10 @@ elsif ( defined $username ) {
 	$history_file        = $username . '_history.txt';
 	$tell_file           = $username . '_tell.txt';
 	$history_file_length = 20;
+	utf8::decode($username);
 }
+utf8::decode($who_said);
+utf8::decode($body);
 
 sub convert_from_secs {
 	my ($secs_to_convert) = @_;
@@ -237,19 +237,25 @@ sub sed_replace {
 sub get_url_title {
 	my ($sub_url) = @_;
 	my @header_array;
-	print "get_url_title, url is $sub_url\n";
+	print "Curl Location: \"$sub_url\"\n";
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = ('0') x '5';
 	my ( $title, $title_start_line, $title_end_line, $new_location );
 	my @curl_title;
-	my $line_no = '1';
+	my $line_no          = '1';
+	my $curl_retry_times = 1;
 	my $user_agent
 		= 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
 	my $curl_max_time = '5';
 	my @curl_args     = (
-		'--compressed', '-s',           '-A',          $user_agent,
-		'--max-time',   $curl_max_time, '--no-buffer', '-i',
-		'--url',        $sub_url
+		'--compressed', '-s',              '-A',         $user_agent,
+		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
+		'--no-buffer',  '-i',              '--url',      $sub_url
 	);
+
+	# REGEX
+	my $title_text_regex  = '\s*(.*\S+)\s*';
+	my $title_start_regex = '.*<title.*?>';
+	my $title_end_regex   = '</title>.*';
 
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
@@ -268,25 +274,29 @@ sub get_url_title {
 			# Detect end of header
 			if ( $curl_line =~ /^\s*$/ ) {
 				$end_of_header = 1;
-				print "end of header detected\n";
+
+				# print "Curl end of header detected\n";
 				if ( $is_text == 0 ) {
 					print "Stopping because it's not text\n";
 					print join( "\n", @header_array );
 					last;
 				}
 				if ( defined $new_location ) {
-					print "Stopping at end of header because there's a new location to go to\n";
+					print "New Location: \"$new_location\" STOPPING at end of header\n";
+					last;
 				}
 			}
 
 			# Detect content type
 			elsif ( $curl_line =~ /^Content-Type:.*text/i ) {
-				print "Curl header says it's text\n";
 				$is_text = 1;
+
+				# print "Curl header says it's text\n";
 			}
 			elsif ( $curl_line =~ /^CF-RAY:/i ) {
 				$is_cloudflare = 1;
-				print "Cloudflare = 1\n";
+
+				# print "Curl header says it's Cloudflare\n";
 			}
 			elsif ( $curl_line =~ /^Set-Cookie.*/i ) {
 				$has_cookie++;
@@ -294,29 +304,34 @@ sub get_url_title {
 			elsif ( $curl_line =~ /^Location:\s*/i ) {
 				$new_location = $curl_line;
 				$new_location =~ s/^Location:\s*(\S*)\s*$/$1/i;
-				print "sub get_url_title New Location: $new_location\n";
+
+				# print "Curl header says there's a new location: $new_location\n";
 			}
 		}
 
+		# Processing done outside the header
 		# If <title> and </title> are on the same line
-		elsif ( $curl_line =~ /<title.*?>/i and $curl_line =~ m{</title>}i ) {
+		elsif ( $curl_line =~ m{$title_start_regex}i and $curl_line =~ m{$title_end_regex}i ) {
 			$title_start_line = $line_no;
 			$title_end_line   = $line_no;
-			$curl_line =~ s{.*<title.*?>(.*)</title>.*}{$1}i;
+			$curl_line =~ s{$title_start_regex$title_text_regex$title_end_regex}{$1}i;
+			$curl_line = $1;
+			print "326\n";
 
 			# If <title> and </title> are on the same line, just set that one line to the aray
-			print "Title start and end is on $line_no\n";
 			push @curl_title, $curl_line;
 			last;
 		}
 
-		# Find the title start
-		elsif ( $curl_line =~ /<title.*?>/i ) {
+		# Find the title start when there's no </title> on the line
+		elsif ( $curl_line =~ /$title_start_regex/i ) {
 			$title_start_line = $line_no;
-			$curl_line =~ s/.*<title.*?>//i;
+
+			# Remove <title>
+			$curl_line =~ s{$title_start_regex}{};
 
 			# Remove trailing and ending whitespace
-			$curl_line =~ s/^\s*(.*)\s*$/$1/;
+			$curl_line =~ s{$title_text_regex}{$1}i;
 
 			# If the line is empty don't push it to the array
 			if ( $curl_line !~ /^\s*$/ ) {
@@ -329,64 +344,67 @@ sub get_url_title {
 		}
 
 		# Find the title end
-		elsif ( $curl_line =~ m{</title>} and $curl_line !~ /^\s*$/ ) {
+		elsif ( $curl_line =~ m{$title_end_regex} ) {
 			$title_end_line = $line_no;
-			$curl_line =~ s{</title>.*}{}i;
-
-			# Remove trailing and ending whitespace
-			$curl_line =~ s/^\s*(.*)\s*$/$1/;
-			push @curl_title, $curl_line;
+			$curl_line =~ s{$title_end_regex}{}i;
+			if ( $curl_line !~ /^\s*$/ ) {
+				push @curl_title, $curl_line;
+			}
 			print "At end of title, line $line_no is \"$curl_line\"\n";
 			last;
 		}
 
 		# If we are between <title> and </title>, push it to the array
 		elsif ( defined $title_start_line and $curl_line !~ /^\s*$/ ) {
-
-			# Remove trailing and ending whitespace
-			$curl_line =~ s/^\s*(.*)\s*$/$1/;
-			push @curl_title, $curl_line;
-			print "Between title, line $line_no is \"$curl_line\"\n";
+			$curl_line =~ s{$title_text_regex}{$1};
+			if ( $curl_line !~ /^\s*$/ ) {
+				push @curl_title, $curl_line;
+				print "Between title, line $line_no is \"$curl_line\"\n";
+			}
 		}
 
 		# If we reach the </head> or <body> then we know we have gone too far
 		elsif ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
-			print "We reached the <body> or the </head> element and couldn't find any header\n";
+			print "We reached the <body.*?> or the </head> element and couldn't find any header\n";
 			last;
 		}
 		$line_no = $line_no + 1;
 	}
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
-	print "Ended on line $line_no\n";
 
 	# Print out $is_text and $title's values
-	print '$is_text = ' . "$is_text\n";
-	print '@curl_title    = ' . @curl_title . "\n";
-	print '$end_of_header = ' . "$end_of_header\n";
+	print "Ended on line $line_no"
+		. '  Is Text: '
+		. "$is_text  "
+		. 'Non-Blank Lines in Title: '
+		. @curl_title
+		. '  End of Header: '
+		. "$end_of_header\n";
+	my $title_length = scalar @curl_title;
 
 	# If we found the header, print out what line it starts on
 	if ( defined $title_start_line or defined $title_end_line ) {
-		print '$title_start_line = '
+		print 'Title Start Line: '
 			. "$title_start_line  "
-			. '$title_end_line = '
-			. $title_end_line . "\n";
+			. 'Title End Line = '
+			. $title_end_line
+			. " Lines from title start to end: $title_length\n";
 	}
-	else {
+	elsif ( !defined $new_location ) {
 		print "No title found, searched $line_no lines\n";
 	}
 
 	if ( $is_text and !defined $new_location ) {
 
 		# Handle a multi line url
-		my $title_length = @curl_title;
-		print "Lines in title: $title_length\n";
-		if ( $title_length == 1 ) {
+		if ( $title_length == 1 and defined $curl_title[0] ) {
 			$title = $curl_title[0];
+			print "One line title is: \"$title\"\n";
 		}
-		else {
-			$title = join q( ), @curl_title;
+		elsif ( $title_length > 1 ) {
+			$title = join q(  ), @curl_title;
 
-			#$title =~ s/^\s*(.*)\s$/$1/;
+			#$title =~ s/^\s*(\S.*\S)\s*$/$1/;
 			print "Title is: \"$title\"\n";
 		}
 
@@ -445,7 +463,6 @@ sub find_url {
 		my $redirects = 0;
 		my ( $url_new_location_2, $url_new_location_3 );
 		if ( defined $url_new_location_1 ) {
-			print "sub find_url New Location: $url_new_location_1\n";
 			(   $url_title,         $url_new_location_2, $url_is_text,
 				$url_is_cloudflare, $url_has_cookie,     $url_is_404
 			) = ();
@@ -455,7 +472,6 @@ sub find_url {
 				$url_is_cloudflare, $url_has_cookie,     $url_is_404
 			) = get_url_title($url_new_location_1);
 
-			print "sub find_url Second New Location: $url_new_location_2\n";
 			if ( defined $url_new_location_2 ) {
 				(   $url_title,         $url_new_location_3, $url_is_text,
 					$url_is_cloudflare, $url_has_cookie,     $url_is_404
@@ -509,7 +525,9 @@ sub find_url {
 			else {
 				$new_location_text = q();
 			}
-			return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
+
+			#return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
+			return 1, "[ $url_title ]" . $new_location_text . $cloudflare_text . $cookie_text;
 		}
 		else {
 			print "find_url return, it's not text\n";
@@ -547,44 +565,41 @@ elsif ( $body =~ /^!help/i ) {
 # Find and get URL's page title
 # Don't get the page header if there's a ## in front of it
 if ( $body !~ m{\#\#\s*http.?://} ) {
-	my ( $url_success, $main_url_title, $main_new_location_text, $main_cloudflare_text,
-		$main_cookie_text )
-		= find_url($body);
+	my ( $url_success, $main_url_title ) = find_url($body);
 	if ( $url_success != 0 and defined $main_url_title ) {
-		print "%[ $main_url_title ]"
-			. $main_new_location_text
-			. $main_cloudflare_text
-			. $main_cookie_text . "\n";
+		print "%$main_url_title\n";
 	}
 	else {
 		print "No url success\n";
 	}
 }
 
-if ( $username ne '' ) {
-	print "I think the username is defined: \"$username\"\n";
-	if ( $body =~ /^!tell/ ) {
-		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
-			print "%$tell_help_text\n";
+if ( defined $username ) {
+	if ( $username ne '' ) {
+		print "I think the username is defined: \"$username\"\n";
+		if ( $body =~ /^!tell/ ) {
+			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
+				print "%$tell_help_text\n";
+			}
+			elsif ( $body =~ /^!tell in/ and $body !~ /!tell in \d+[smhd] / ) {
+				print "%$tell_in_help_text\n";
+			}
+			else {
+				print "Calling tell_nick_command\n";
+				tell_nick_command( $body, $who_said );
+			}
 		}
-		elsif ( $body =~ /^!tell in/ and $body !~ /!tell in \d+[smhd] / ) {
-			print "%$tell_in_help_text\n";
-		}
-		else {
-			print "Calling tell_nick_command\n";
-			tell_nick_command( $body, $who_said );
-		}
-	}
 
-	print "Calling tell_nick\n";
-	my ($tell_to_say) = tell_nick($who_said);
-	if ( defined $tell_to_say ) {
-		print "Tell to say line next\n";
-		print "%$tell_to_say\n";
-	}
+		print "Calling tell_nick\n";
+		my ($tell_to_say) = tell_nick($who_said);
+		if ( defined $tell_to_say ) {
+			print "Tell to say line next\n";
+			print "%$tell_to_say\n";
+		}
 
-	# Trunicate history file only if the bot's username is set.
-	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
-		and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+		# Trunicate history file only if the bot's username is set.
+		`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+			and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+	}
 }
 exit;

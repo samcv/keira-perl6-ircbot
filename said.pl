@@ -238,14 +238,14 @@ sub get_url_title {
 	my ($sub_url) = @_;
 	my @header_array;
 	print "Curl Location: \"$sub_url\"\n";
-	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = ('0') x '5';
+	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
 	my ( $title, $title_start_line, $title_end_line, $new_location );
 	my @curl_title;
-	my $line_no          = '1';
+	my $line_no          = 1;
 	my $curl_retry_times = 1;
 	my $user_agent
 		= 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
-	my $curl_max_time = '5';
+	my $curl_max_time = 5;
 	my @curl_args     = (
 		'--compressed', '-s',              '-A',         $user_agent,
 		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
@@ -275,7 +275,6 @@ sub get_url_title {
 			if ( $curl_line =~ /^\s*$/ ) {
 				$end_of_header = 1;
 
-				# print "Curl end of header detected\n";
 				if ( $is_text == 0 ) {
 					print "Stopping because it's not text\n";
 					print join( "\n", @header_array );
@@ -315,8 +314,6 @@ sub get_url_title {
 			$title_start_line = $line_no;
 			$title_end_line   = $line_no;
 			$curl_line =~ s{$title_start_regex$title_text_regex$title_end_regex}{$1}i;
-			$curl_line = $1;
-			print "326\n";
 
 			# If <title> and </title> are on the same line, just set that one line to the aray
 			push @curl_title, $curl_line;
@@ -324,7 +321,7 @@ sub get_url_title {
 		}
 
 		# Find the title start when there's no </title> on the line
-		elsif ( $curl_line =~ /$title_start_regex/i ) {
+		elsif ( $curl_line =~ m{$title_start_regex}i ) {
 			$title_start_line = $line_no;
 
 			# Remove <title>
@@ -349,8 +346,11 @@ sub get_url_title {
 			$curl_line =~ s{$title_end_regex}{}i;
 			if ( $curl_line !~ /^\s*$/ ) {
 				push @curl_title, $curl_line;
+				print "At end of title, line $line_no is \"$curl_line\"\n";
 			}
-			print "At end of title, line $line_no is \"$curl_line\"\n";
+			else {
+				print "At end of title, line $line_no, does not contain title text.\n";
+			}
 			last;
 		}
 
@@ -368,19 +368,23 @@ sub get_url_title {
 			print "We reached the <body.*?> or the </head> element and couldn't find any header\n";
 			last;
 		}
-		$line_no = $line_no + 1;
+		$line_no++;
 	}
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
+	my $title_non_blank_lines = scalar @curl_title;
 
 	# Print out $is_text and $title's values
 	print "Ended on line $line_no"
 		. '  Is Text: '
 		. "$is_text  "
 		. 'Non-Blank Lines in Title: '
-		. @curl_title
+		. $title_non_blank_lines
 		. '  End of Header: '
 		. "$end_of_header\n";
-	my $title_length = scalar @curl_title;
+	my $title_length = '?';
+	if ( defined $title_start_line and defined $title_end_line ) {
+		$title_length = $title_end_line - $title_start_line;
+	}
 
 	# If we found the header, print out what line it starts on
 	if ( defined $title_start_line or defined $title_end_line ) {
@@ -397,21 +401,13 @@ sub get_url_title {
 	if ( $is_text and !defined $new_location ) {
 
 		# Handle a multi line url
-		if ( $title_length == 1 and defined $curl_title[0] ) {
+		if ( $title_non_blank_lines == 1 and defined $curl_title[0] ) {
 			$title = $curl_title[0];
 			print "One line title is: \"$title\"\n";
 		}
-		elsif ( $title_length > 1 ) {
+		elsif ( $title_non_blank_lines > 1 ) {
 			$title = join q(  ), @curl_title;
-
-			#$title =~ s/^\s*(\S.*\S)\s*$/$1/;
 			print "Title is: \"$title\"\n";
-		}
-
-		chomp $title;
-		if ( !defined $title ) {
-			print "No title found\n";
-			return;
 		}
 
 		# Replace carriage returns with two spaces
@@ -432,6 +428,8 @@ sub find_url {
 	my @find_url_array   = extract_urls $find_url_caller_text;
 
 	foreach my $single_url (@find_url_array) {
+
+		# Make sure we don't include FTP
 		if ( $single_url !~ m{^ftp://} ) {
 			$find_url_url = $single_url;
 			print "Found $find_url_url as the first url\n";
@@ -441,10 +439,6 @@ sub find_url {
 
 	if ( defined $find_url_url ) {
 
-		if ( $find_url_url eq '%' ) {
-			print "Empty url found!\n";
-			return;
-		}
 		if ( $find_url_url =~ m/;/ ) {
 			print "URL has comma(s) in it!\n";
 			$find_url_url =~ s/;/%3B/xmsg;
@@ -496,18 +490,6 @@ sub find_url {
 			$url_new_location = $url_new_location_1;
 		}
 
-		my $cloudflare_text = q();
-		if ( $url_is_cloudflare == 1 ) {
-			$cloudflare_text = ' **CLOUDFLARE**';
-		}
-		my $cookie_text;
-		if ( $url_has_cookie >= 1 ) {
-			$cookie_text = q( ) . q([ 🍪 ]);
-		}
-		if ($url_is_404) {
-			print "find_url return, 404 error\n";
-			return;
-		}
 		if ($url_is_text) {
 			my $short_title = substr $url_title, 0, $max_title_length;
 			if ( $url_title ne $short_title and $find_url_url !~ m{twitter[.]com/.+/status} ) {
@@ -517,17 +499,8 @@ sub find_url {
 				print "find_url return, No title found right before print\n";
 				return;
 			}
-
-			if ( defined $url_new_location ) {
-				$new_location_text = " >> $url_new_location";
-				chomp $new_location_text;
-			}
-			else {
-				$new_location_text = q();
-			}
-
-			#return 1, $url_title, $new_location_text, $cloudflare_text, $cookie_text;
-			return 1, "[ $url_title ]" . $new_location_text . $cloudflare_text . $cookie_text;
+			return ( 1, $find_url_url, $url_is_text, $url_title, $url_new_location,
+				$url_is_cloudflare, $url_has_cookie, $url_is_404 );
 		}
 		else {
 			print "find_url return, it's not text\n";
@@ -535,7 +508,52 @@ sub find_url {
 		}
 	}
 	else {
-		return;
+		return 0;
+	}
+}
+
+sub url_format_text {
+	my ( $format_success, $format_url, $format_is_text, $format_title, $format_new_location,
+		$format_cloudflare, $format_cookie, $format_404 )
+		= @_;
+	my $cloudflare_text  = q();
+	my $max_title_length = 120;
+	if ( $format_cloudflare == 1 ) {
+		$cloudflare_text = ' **CLOUDFLARE**';
+	}
+	my $new_location_text;
+	my $cookie_text;
+	if ( $format_cookie >= 1 ) {
+		$cookie_text = q( ) . q([ 🍪 ]);
+	}
+	else {
+		$cookie_text = q();
+	}
+	if ($format_404) {
+		print "find_url return, 404 error\n";
+		return 0;
+	}
+	if ($format_is_text) {
+		my $short_title = substr $format_title, 0, $max_title_length;
+		if ( $format_title ne $short_title and $format_url !~ m{twitter[.]com/.+/status} ) {
+			$format_title = $short_title . ' ...';
+		}
+		if ( !$format_title ) {
+			print "find_url return, No title found right before print\n";
+			return 0;
+		}
+
+		if ( defined $format_new_location ) {
+			$new_location_text = " >> $format_new_location";
+			chomp $new_location_text;
+		}
+		else {
+			$new_location_text = q();
+		}
+		return 1, "[ $format_title ]" . $new_location_text . $cloudflare_text . $cookie_text;
+	}
+	else {
+		return 0;
 	}
 }
 
@@ -565,9 +583,21 @@ elsif ( $body =~ /^!help/i ) {
 # Find and get URL's page title
 # Don't get the page header if there's a ## in front of it
 if ( $body !~ m{\#\#\s*http.?://} ) {
-	my ( $url_success, $main_url_title ) = find_url($body);
-	if ( $url_success != 0 and defined $main_url_title ) {
-		print "%$main_url_title\n";
+	my ($main_find_url_success, $main_find_url_url,     $main_url_is_text,
+		$main_url_title,        $main_url_new_location, $main_url_is_cloudflare,
+		$main_url_has_cookie,   $main_url_is_404
+	) = find_url($body);
+
+	#my ( $url_success, $main_url_title ) = find_url($body);
+	if ( $main_find_url_success != 0 and defined $main_url_title ) {
+		my $main_url_formatted_text = url_format_text(
+			$main_find_url_success, $main_find_url_url,     $main_url_is_text,
+			$main_url_title,        $main_url_new_location, $main_url_is_cloudflare,
+			$main_url_has_cookie,   $main_url_is_404
+		);
+		if ( defined $main_url_formatted_text ) {
+			print "%$main_url_formatted_text\n";
+		}
 	}
 	else {
 		print "No url success\n";
@@ -602,4 +632,5 @@ if ( defined $username ) {
 			and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
 	}
 }
+
 exit;

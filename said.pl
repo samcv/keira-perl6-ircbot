@@ -29,7 +29,7 @@ my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell t
 
 my $said_time_called = time;
 
-if ( !defined $body or !defined $who_said ) {
+if ( ( !defined $body ) or ( !defined $who_said ) ) {
 	print "Did not receive any input\n";
 	print "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
@@ -39,6 +39,17 @@ elsif ( defined $username ) {
 	$tell_file           = $username . '_tell.txt';
 	$history_file_length = 20;
 	utf8::decode($username);
+
+	# Add line to history file
+	open my $history_fh, '>>', "$history_file"
+		or print "Could not open history file, Error $ERRNO\n";
+	binmode( $history_fh, ":encoding(UTF-8)" )
+		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
+
+	# Don't set binmode on $history_fh or it will break
+	print $history_fh "<$who_said> $body\n"
+		or print "Failed to append to $history_file, Error $ERRNO\n";
+	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
 }
 utf8::decode($who_said);
 utf8::decode($body);
@@ -71,7 +82,6 @@ sub convert_from_secs {
 sub tell_nick {
 	my ($tell_nick_who) = @_;
 	my $tell_return;
-
 	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
 	binmode( $tell_fh, ':encoding(UTF-8)' )
 		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
@@ -86,8 +96,8 @@ sub tell_nick {
 		chomp $tell_line;
 		my $time_var = $tell_line;
 		$time_var =~ s/^\d+ (\d+) <.+>.*/$1/;
-		if (    $tell_line =~ /^\d+ \d+ <.+> >$tell_nick_who</
-			and !$has_been_said
+		if (    $tell_line =~ m{^\d+ \d+ <.+> >$tell_nick_who<}
+			and ( !$has_been_said )
 			and $time_var < $said_time_called )
 		{
 			chomp $tell_line;
@@ -131,7 +141,7 @@ sub tell_nick {
 			print $tell_fh "$tell_line\n";
 		}
 	}
-	close $tell_fh;
+	close $tell_fh or print 'Could not close $tell_fh' . ", Error $ERRNO\n";
 	if ( defined $tell_return ) {
 		return $tell_return;
 	}
@@ -188,6 +198,13 @@ sub sed_replace {
 	$before =~ s{^s/(.+?)/.*}{$1};
 	my $after = $sed_called_text;
 	$after =~ s{^s/.+?/(.*)}{$1};
+	my $case_sensitivity = 0;
+
+	# Remove trailing slash
+	if ( $after =~ m{/(\S)$} ) {
+		if ( $1 eq 'i' ) { $case_sensitivity = 1; }
+		$after =~ s{/\S$}{};
+	}
 	$after =~ s{/$}{};
 	print "first: $before\tsecond: $after\n";
 	my $replaced_who;
@@ -199,37 +216,54 @@ sub sed_replace {
 
 	while ( defined( my $history_line = <$history_fh> ) ) {
 		chomp $history_line;
-
-		#print "$history_line\n";
 		my $history_who = $history_line;
-		$history_who =~ s{^<(.+)>.*}{$1};
+		$history_who =~ s{^<(.+?)>.*}{$1};
 		my $history_said = $history_line;
-		$history_said =~ s{<.+> }{};
+		$history_said =~ s{^<.+?> }{};
 		if ( $history_said =~ m{$before}i and $history_said !~ m{^s/} ) {
 			print "Found match\n";
-			$replaced_said = $history_said;
+			my $temp_replaced_said = $history_said;
 
 			# Allow use of [abc] to match either a,b or c
 			if ( $before =~ m{^\[.*\]$} ) {
 				my $before_2 = $before;
 				$before_2 =~ s{^\[(.*)\]$}{$1};
-				$replaced_said =~ s{[$before_2]}{$after}ig;
+				$temp_replaced_said =~ s{[$before_2]}{$after}g;
+				if ( $history_said ne $temp_replaced_said ) {
+					$replaced_said = $temp_replaced_said;
+					$replaced_who  = $history_who;
+					print "set1\n";
+				}
 			}
 			else {
-				$replaced_said =~ s{\Q$before\E}{$after}ig;
+				if ( $case_sensitivity == 0 ) {
+					$temp_replaced_said =~ s{\Q$before\E}{$after}g;
+					if ( $history_said ne $temp_replaced_said ) {
+						$replaced_said = $temp_replaced_said;
+						$replaced_who  = $history_who;
+						print "set2\n";
+					}
+				}
+				elsif ( $case_sensitivity == 1 ) {
+					$temp_replaced_said =~ s{\Q$before\E}{$after}ig;
+					if ( $history_said ne $temp_replaced_said ) {
+						$replaced_said = $temp_replaced_said;
+						$replaced_who  = $history_who;
+						print "set3\n";
+					}
+				}
 			}
-			$replaced_who = $history_who;
-			print "replaced_said: $replaced_said\n";
 		}
 	}
-	close $history_fh;
-	if ( defined $replaced_said ) {
+	close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
+	if ( defined $replaced_said && defined $replaced_who ) {
+		print "replaced_said: $replaced_said replaced_who: $replaced_who\n";
 		open my $history_fh, '>>', "$history_file"
 			or print "Could not open $history_file for write\n";
 		binmode( $history_fh, ":encoding(UTF-8)" )
 			or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
-		print $history_fh "<$replaced_who> $replaced_said\n";
-		close $history_fh;
+		print $history_fh '<' . $replaced_who . '> ' . $replaced_said . "\n";
+		close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
 		return $replaced_who, $replaced_said;
 	}
 }
@@ -256,7 +290,7 @@ sub get_url_title {
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
-
+	my @curl_doc;
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
 	binmode( $CURL_OUT, ':encoding(UTF-8)' )
@@ -289,13 +323,9 @@ sub get_url_title {
 			# Detect content type
 			elsif ( $curl_line =~ /^Content-Type:.*text/i ) {
 				$is_text = 1;
-
-				# print "Curl header says it's text\n";
 			}
 			elsif ( $curl_line =~ /^CF-RAY:/i ) {
 				$is_cloudflare = 1;
-
-				# print "Curl header says it's Cloudflare\n";
 			}
 			elsif ( $curl_line =~ /^Set-Cookie.*/i ) {
 				$has_cookie++;
@@ -303,74 +333,81 @@ sub get_url_title {
 			elsif ( $curl_line =~ /^Location:\s*/i ) {
 				$new_location = $curl_line;
 				$new_location =~ s/^Location:\s*(\S*)\s*$/$1/i;
-
-				# print "Curl header says there's a new location: $new_location\n";
 			}
 		}
 
-		# Processing done outside the header
-		# If <title> and </title> are on the same line
-		elsif ( $curl_line =~ m{$title_start_regex}i and $curl_line =~ m{$title_end_regex}i ) {
-			$title_start_line = $line_no;
-			$title_end_line   = $line_no;
-			$curl_line =~ s{$title_start_regex$title_text_regex$title_end_regex}{$1}i;
+		# Processing done after the header
+		elsif ( $end_of_header != 0 ) {
+			push @curl_doc, $curl_line;
 
-			# If <title> and </title> are on the same line, just set that one line to the aray
-			push @curl_title, $curl_line;
-			last;
-		}
+			# If <title> and </title> are on the same line
+			if ( $curl_line =~ m{$title_start_regex}i and $curl_line =~ m{$title_end_regex}i ) {
+				$title_start_line = $line_no;
+				$title_end_line   = $line_no;
+				$curl_line =~ s{$title_start_regex$title_text_regex$title_end_regex}{$1}i;
+				$curl_line = $1;
 
-		# Find the title start when there's no </title> on the line
-		elsif ( $curl_line =~ m{$title_start_regex}i ) {
-			$title_start_line = $line_no;
-
-			# Remove <title>
-			$curl_line =~ s{$title_start_regex}{};
-
-			# Remove trailing and ending whitespace
-			$curl_line =~ s{$title_text_regex}{$1}i;
-
-			# If the line is empty don't push it to the array
-			if ( $curl_line !~ /^\s*$/ ) {
+				# If <title> and </title> are on the same line, just set that one line to the aray
 				push @curl_title, $curl_line;
-				print "At start of title, line $line_no is \"$curl_line\"\n";
+				last;
 			}
-			else {
-				print "Found start of title on line $line_no, line only contains <title>\n";
+
+			# Find the title start when there's no </title> on the line
+			elsif ( $curl_line =~ m{$title_start_regex}i ) {
+				$title_start_line = $line_no;
+
+				# Remove <title>
+				$curl_line =~ s{$title_start_regex}{};
+
+				# Remove trailing and ending whitespace
+				$curl_line =~ s{$title_text_regex}{$1}i;
+
+				# If the line is empty don't push it to the array
+				if ( $curl_line !~ /^\s*$/ ) {
+					push @curl_title, $curl_line;
+					print "At start of title, line $line_no is \"$curl_line\"\n";
+				}
+				else {
+					print "Found start of title on line $line_no, line only contains <title>\n";
+				}
+			}
+
+			# Find the title end
+			elsif ( $curl_line =~ m{$title_end_regex} ) {
+				$title_end_line = $line_no;
+				$curl_line =~ s{$title_end_regex}{}i;
+
+				#$curl_line =~ s{$title_text_regex}{$1};
+				if ( $curl_line !~ /^\s*$/ ) {
+					push @curl_title, $curl_line;
+					print "At end of title, line $line_no is \"$curl_line\"\n";
+				}
+				else {
+					print "At end of title, line $line_no, does not contain title text.\n";
+				}
+				last;
+			}
+
+			# If we are between <title> and </title>, push it to the array if it's not blank
+			elsif ( defined $title_start_line && $curl_line !~ /^\s*$/ ) {
+				$curl_line =~ s{$title_text_regex}{$1};
+				if ( $curl_line !~ /^\s*$/ ) {
+					push @curl_title, $curl_line;
+					print "Between title, line $line_no is \"$curl_line\"\n";
+				}
+			}
+
+			# If we reach the </head> or <body> then we know we have gone too far
+			elsif ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
+				print "We reached the body or the head> element and couldn't find any page title\n";
+				last;
 			}
 		}
 
-		# Find the title end
-		elsif ( $curl_line =~ m{$title_end_regex} ) {
-			$title_end_line = $line_no;
-			$curl_line =~ s{$title_end_regex}{}i;
-			if ( $curl_line !~ /^\s*$/ ) {
-				push @curl_title, $curl_line;
-				print "At end of title, line $line_no is \"$curl_line\"\n";
-			}
-			else {
-				print "At end of title, line $line_no, does not contain title text.\n";
-			}
-			last;
-		}
-
-		# If we are between <title> and </title>, push it to the array
-		elsif ( defined $title_start_line and $curl_line !~ /^\s*$/ ) {
-			$curl_line =~ s{$title_text_regex}{$1};
-			if ( $curl_line !~ /^\s*$/ ) {
-				push @curl_title, $curl_line;
-				print "Between title, line $line_no is \"$curl_line\"\n";
-			}
-		}
-
-		# If we reach the </head> or <body> then we know we have gone too far
-		elsif ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
-			print "We reached the <body.*?> or the </head> element and couldn't find any header\n";
-			last;
-		}
 		$line_no++;
 	}
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
+
 	my $title_non_blank_lines = scalar @curl_title;
 
 	# Print out $is_text and $title's values
@@ -398,26 +435,22 @@ sub get_url_title {
 		print "No title found, searched $line_no lines\n";
 	}
 
-	if ( $is_text and !defined $new_location ) {
+	if ( $is_text and $curl_title[0] and ( !defined $new_location ) ) {
 
-		# Handle a multi line url
-		if ( $title_non_blank_lines == 1 and defined $curl_title[0] ) {
-			$title = $curl_title[0];
-			print "One line title is: \"$title\"\n";
-		}
-		elsif ( $title_non_blank_lines > 1 ) {
-			$title = join q(  ), @curl_title;
-			print "Title is: \"$title\"\n";
-		}
+		# Flatten the title array, putting two spaces between lines
+		$title = join q(  ), @curl_title;
 
 		# Replace carriage returns with two spaces
 		$title =~ s/\r/  /g;
 
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
+		print "Title is: \"$title\"\n";
+
+		#return $title, $new_location, $is_text, $is_cloudflare, $has_cookie, $is_404;
+
 	}
 	return $title, $new_location, $is_text, $is_cloudflare, $has_cookie, $is_404;
-
 }
 
 sub find_url {
@@ -442,11 +475,11 @@ sub find_url {
 		if ( $find_url_url =~ m/;/ ) {
 			print "URL has comma(s) in it!\n";
 			$find_url_url =~ s/;/%3B/xmsg;
-			return;
+			return 0;
 		}
 		if ( $find_url_url =~ m/\$/ ) {
 			print "\$ sign found\n";
-			return;
+			return 0;
 		}
 		my $url_new_location;
 
@@ -490,14 +523,14 @@ sub find_url {
 			$url_new_location = $url_new_location_1;
 		}
 
-		if ($url_is_text) {
+		if ( $url_is_text && defined $url_title ) {
 			my $short_title = substr $url_title, 0, $max_title_length;
 			if ( $url_title ne $short_title and $find_url_url !~ m{twitter[.]com/.+/status} ) {
 				$url_title = $short_title . ' ...';
 			}
 			if ( !$url_title ) {
 				print "find_url return, No title found right before print\n";
-				return;
+				return 0;
 			}
 			return ( 1, $find_url_url, $url_is_text, $url_title, $url_new_location,
 				$url_is_cloudflare, $url_has_cookie, $url_is_404 );
@@ -572,6 +605,7 @@ elsif ( $body =~ m{^s/.+/} and defined $username ) {
 		$sed_text = $sed_short_text . ' ...';
 	}
 	if ( defined $sed_who and defined $sed_text ) {
+		print "sed_who: $sed_who sed_text: $sed_text\n";
 		print "%<$sed_who> $sed_text\n";
 	}
 }
@@ -599,14 +633,13 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 			print "%$main_url_formatted_text\n";
 		}
 	}
-	else {
-		print "No url success\n";
+	elsif ( !defined $main_url_title and $main_find_url_success == 1 ) {
+		print "No url title found right before channel message\n";
 	}
 }
 
 if ( defined $username ) {
-	if ( $username ne '' ) {
-		print "I think the username is defined: \"$username\"\n";
+	if ( $username ne q() ) {
 		if ( $body =~ /^!tell/ ) {
 			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
 				print "%$tell_help_text\n";
@@ -619,12 +652,13 @@ if ( defined $username ) {
 				tell_nick_command( $body, $who_said );
 			}
 		}
-
-		print "Calling tell_nick\n";
-		my ($tell_to_say) = tell_nick($who_said);
-		if ( defined $tell_to_say ) {
-			print "Tell to say line next\n";
-			print "%$tell_to_say\n";
+		if ( -f $tell_file ) {
+			print "Calling tell_nick\n";
+			my ($tell_to_say) = tell_nick($who_said);
+			if ( defined $tell_to_say ) {
+				print "Tell to say line next\n";
+				print "%$tell_to_say\n";
+			}
 		}
 
 		# Trunicate history file only if the bot's username is set.

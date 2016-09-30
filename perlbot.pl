@@ -77,11 +77,6 @@ sub said {
 
 	}
 	close $SAID_OUT;
-	open my $history_fh, '>>', "$history_file" or print "Could not open history file, Error $?\n";
-	# Don't set binmode on $history_fh or it will break
-	print $history_fh "<$who_said> $body\n"
-		or print "Failed to append to $history_file, Error $?\n";
-	close $history_fh or print "Could not close $history_file, Error $?\n";
 
 	return;
 

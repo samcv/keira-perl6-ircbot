@@ -273,8 +273,8 @@ sub get_url_title {
 	my @header_array;
 	print "Curl Location: \"$sub_url\"\n";
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
-	my ( $title, $title_start_line, $title_between_line, $title_end_line, $new_location );
-	my @curl_title;
+	my ( $title_start_line, $title_between_line, $title_end_line ) = (0) x 3;
+	my ( @curl_title, $new_location, $title );
 	my $line_no          = 1;
 	my $curl_retry_times = 1;
 	my $user_agent
@@ -290,8 +290,6 @@ sub get_url_title {
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
-	my @curl_doc;
-	my $temp_title;
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
 	binmode( $CURL_OUT, ':encoding(UTF-8)' )
@@ -299,9 +297,6 @@ sub get_url_title {
 
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 		chomp $curl_line;
-
-		# Remove starting and ending whitespace
-		$curl_line =~ s/^\s*(.*)\s*$/$1/;
 
 		# Processing done only within the header
 		if ( $end_of_header == 0 ) {
@@ -340,7 +335,6 @@ sub get_url_title {
 
 		# Processing done after the header
 		else {
-			push @curl_doc, $curl_line;
 
 			# Find the <title> element
 			if ( $curl_line =~ s{$title_start_regex}{}i ) {
@@ -353,7 +347,7 @@ sub get_url_title {
 			}
 
 			# If we are between <title> and </title>
-			if ( defined $title_start_line && !defined $title_end_line ) {
+			if ( $title_start_line != 0 && $title_end_line == 0 ) {
 				$title_between_line = $line_no;
 			}
 
@@ -363,14 +357,10 @@ sub get_url_title {
 					push @curl_title, $curl_line;
 					print "Line $line_no is \"$curl_line\"\n";
 				}
-				if ( defined $title_end_line ) {
-					last;
-				}
 			}
 
-			# If we reach the </head> or <body> then we know we have gone too far
-			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
-				print "We reached the body or the head> element and couldn't find any page title\n";
+			# If we reach the </head>, <body> have reached the end of title
+			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} or $title_end_line != 0 ) {
 				last;
 			}
 		}
@@ -379,34 +369,22 @@ sub get_url_title {
 	}
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
 
-	my $title_non_blank_lines = scalar @curl_title;
-
 	# Print out $is_text and $title's values
 	print "Ended on line $line_no"
 		. '  Is Text: '
 		. "$is_text  "
 		. 'Non-Blank Lines in Title: '
-		. $title_non_blank_lines
+		. scalar @curl_title
 		. '  End of Header: '
 		. "$end_of_header\n";
-	my $title_length = '?';
-	if ( defined $title_start_line and defined $title_end_line ) {
-		$title_length = $title_end_line - $title_start_line;
-	}
 
-	# If we found the header, print out what line it starts on
-	if ( defined $title_start_line or defined $title_end_line ) {
+	if ( $curl_title[0] and ( !defined $new_location ) ) {
+		my $title_length = $title_end_line - $title_start_line;
 		print 'Title Start Line: '
 			. "$title_start_line  "
 			. 'Title End Line = '
 			. $title_end_line
 			. " Lines from title start to end: $title_length\n";
-	}
-	elsif ( !defined $new_location ) {
-		print "No title found, searched $line_no lines\n";
-	}
-
-	if ( $is_text and $curl_title[0] and ( !defined $new_location ) ) {
 
 		# Flatten the title array, putting two spaces between lines
 		$title = join q(  ), @curl_title;
@@ -417,9 +395,9 @@ sub get_url_title {
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
 		print "Title is: \"$title\"\n";
-
-		#return $title, $new_location, $is_text, $is_cloudflare, $has_cookie, $is_404;
-
+	}
+	else {
+		print "Didn't get title or a new location is defined\n";
 	}
 	return $title, $new_location, $is_text, $is_cloudflare, $has_cookie, $is_404;
 }

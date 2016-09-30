@@ -389,6 +389,7 @@ sub get_url_title {
 		print "Title is: \"$title\"\n";
 	}
 	my %object = (
+		url           => $sub_url,
 		title         => $title,
 		new_location  => $new_location,
 		is_text       => $is_text,
@@ -423,7 +424,7 @@ sub find_url {
 			$find_url_url =~ s/;/%3B/xmsg;
 			return 0;
 		}
-		if ( $find_url_url =~ m/\$/ ) {
+		elsif ( $find_url_url =~ m/\$/ ) {
 			print "\$ sign found\n";
 			return 0;
 		}
@@ -432,14 +433,14 @@ sub find_url {
 		my %url_object = get_url_title($find_url_url);
 
 		my $redirects = 0;
-		my ( $url_new_location_1, $url_new_location_2, $url_new_location_3 );
 		while ( defined $url_object{new_location} and $redirects < 3 ) {
 			$redirects++;
 			if ( defined $url_object{new_location} ) {
 				$url_new_location = $url_object{new_location};
-				%url_object = get_url_title($url_new_location);
+				%url_object       = get_url_title($url_new_location);
 			}
 		}
+		$url_object{new_location} = $url_new_location;
 
 		if ( $url_object{is_text} && defined $url_object{title} ) {
 			my $short_title = substr $url_object{title}, 0, $max_title_length;
@@ -448,13 +449,7 @@ sub find_url {
 			{
 				$url_object{'title'} = $short_title . ' ...';
 			}
-			if ( !$url_object{title} ) {
-				print "find_url return, No title found right before print\n";
-				return 0;
-			}
-			return ( 1, $find_url_url, $url_object{is_text}, $url_object{title}, $url_new_location,
-				$url_object{is_cloudflare},
-				$url_object{has_cookie}, $url_object{is_404} );
+			return ( 1, %url_object );
 		}
 		else {
 			print "find_url return, it's not text\n";
@@ -467,44 +462,49 @@ sub find_url {
 }
 
 sub url_format_text {
-	my ( $format_success, $format_url, $format_is_text, $format_title, $format_new_location,
-		$format_cloudflare, $format_cookie, $format_404 )
-		= @_;
+	my ( $format_success, %url_format_object ) = @_;
+
 	my $cloudflare_text  = q();
 	my $max_title_length = 120;
-	if ( $format_cloudflare == 1 ) {
+	if ( $url_format_object{is_cloudflare} == 1 ) {
 		$cloudflare_text = ' **CLOUDFLARE**';
 	}
 	my $new_location_text;
 	my $cookie_text;
-	if ( $format_cookie >= 1 ) {
+	if ( $url_format_object{has_cookie} >= 1 ) {
 		$cookie_text = q( ) . q([ 🍪 ]);
 	}
 	else {
 		$cookie_text = q();
 	}
-	if ($format_404) {
+	if ( $url_format_object{is_404} ) {
 		print "find_url return, 404 error\n";
 		return 0;
 	}
-	if ($format_is_text) {
-		my $short_title = substr $format_title, 0, $max_title_length;
-		if ( $format_title ne $short_title and $format_url !~ m{twitter[.]com/.+/status} ) {
-			$format_title = $short_title . ' ...';
+	if ( $url_format_object{is_text} ) {
+		my $short_title = substr $url_format_object{title}, 0, $max_title_length;
+		if (    $url_format_object{title} ne $short_title
+			and $url_format_object{url} !~ m{twitter[.]com/.+/status} )
+		{
+			$url_format_object{title} = $short_title . ' ...';
 		}
-		if ( !$format_title ) {
+		if ( !$url_format_object{title} ) {
 			print "find_url return, No title found right before print\n";
 			return 0;
 		}
 
-		if ( defined $format_new_location ) {
-			$new_location_text = " >> $format_new_location";
+		if ( defined $url_format_object{new_location} ) {
+			$new_location_text = " >> $url_format_object{new_location}";
 			chomp $new_location_text;
 		}
 		else {
 			$new_location_text = q();
 		}
-		return 1, "[ $format_title ]" . $new_location_text . $cloudflare_text . $cookie_text;
+		return 1,
+			  "[ $url_format_object{title} ]"
+			. $new_location_text
+			. $cloudflare_text
+			. $cookie_text;
 	}
 	else {
 		return 0;
@@ -538,23 +538,15 @@ elsif ( $body =~ /^!help/i ) {
 # Find and get URL's page title
 # Don't get the page header if there's a ## in front of it
 if ( $body !~ m{\#\#\s*http.?://} ) {
-	my ($main_find_url_success, $main_find_url_url,     $main_url_is_text,
-		$main_url_title,        $main_url_new_location, $main_url_is_cloudflare,
-		$main_url_has_cookie,   $main_url_is_404
-	) = find_url($body);
+	my ( $main_find_url_success, %main_url_object ) = find_url($body);
 
-	#my ( $url_success, $main_url_title ) = find_url($body);
-	if ( $main_find_url_success != 0 and defined $main_url_title ) {
-		my $main_url_formatted_text = url_format_text(
-			$main_find_url_success, $main_find_url_url,     $main_url_is_text,
-			$main_url_title,        $main_url_new_location, $main_url_is_cloudflare,
-			$main_url_has_cookie,   $main_url_is_404
-		);
+	if ( $main_find_url_success != 0 and defined $main_url_object{title} ) {
+		my $main_url_formatted_text = url_format_text( $main_find_url_success, %main_url_object );
 		if ( defined $main_url_formatted_text ) {
 			print "%$main_url_formatted_text\n";
 		}
 	}
-	elsif ( !defined $main_url_title && $main_find_url_success == 1 ) {
+	elsif ( !defined $main_url_object{title} && $main_find_url_success == 1 ) {
 		print "No url title found right before channel message\n";
 	}
 }
@@ -572,12 +564,12 @@ if ( defined $username ) {
 				print "%$tell_in_help_text\n";
 			}
 			else {
-				print "Calling tell_nick_command\n";
+				print time . "Calling tell_nick_command\n";
 				tell_nick_command( $body, $who_said );
 			}
 		}
 		if ( -f $tell_file ) {
-			print "Calling tell_nick\n";
+			print localtime(time) . "\tCalling tell_nick\n";
 			my ($tell_to_say) = tell_nick($who_said);
 			if ( defined $tell_to_say ) {
 				print "Tell to say line next\n";

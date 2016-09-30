@@ -273,7 +273,7 @@ sub get_url_title {
 	my @header_array;
 	print "Curl Location: \"$sub_url\"\n";
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
-	my ( $title, $title_start_line, $title_end_line, $new_location );
+	my ( $title, $title_start_line, $title_between_line, $title_end_line, $new_location );
 	my @curl_title;
 	my $line_no          = 1;
 	my $curl_retry_times = 1;
@@ -291,10 +291,12 @@ sub get_url_title {
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
 	my @curl_doc;
+	my $temp_title;
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
 	binmode( $CURL_OUT, ':encoding(UTF-8)' )
 		or print 'Failed to set binmode on $CURL_OUT, Error ' . "$ERRNO\n";
+
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 		chomp $curl_line;
 
@@ -337,68 +339,37 @@ sub get_url_title {
 		}
 
 		# Processing done after the header
-		elsif ( $end_of_header != 0 ) {
+		else {
 			push @curl_doc, $curl_line;
 
-			# If <title> and </title> are on the same line
-			if ( $curl_line =~ m{$title_start_regex}i and $curl_line =~ m{$title_end_regex}i ) {
+			# Find the <title> element
+			if ( $curl_line =~ s{$title_start_regex}{}i ) {
 				$title_start_line = $line_no;
-				$title_end_line   = $line_no;
-				$curl_line =~ s{$title_start_regex$title_text_regex$title_end_regex}{$1}i;
-				$curl_line = $1;
-
-				# If <title> and </title> are on the same line, just set that one line to the aray
-				push @curl_title, $curl_line;
-				last;
 			}
 
-			# Find the title start when there's no </title> on the line
-			elsif ( $curl_line =~ m{$title_start_regex}i ) {
-				$title_start_line = $line_no;
-
-				# Remove <title>
-				$curl_line =~ s{$title_start_regex}{};
-
-				# Remove trailing and ending whitespace
-				$curl_line =~ s{$title_text_regex}{$1}i;
-
-				# If the line is empty don't push it to the array
-				if ( $curl_line !~ /^\s*$/ ) {
-					push @curl_title, $curl_line;
-					print "At start of title, line $line_no is \"$curl_line\"\n";
-				}
-				else {
-					print "Found start of title on line $line_no, line only contains <title>\n";
-				}
-			}
-
-			# Find the title end
-			elsif ( $curl_line =~ m{$title_end_regex} ) {
+			# Find the </title> element
+			if ( $curl_line =~ s{$title_end_regex}{}i ) {
 				$title_end_line = $line_no;
-				$curl_line =~ s{$title_end_regex}{}i;
-
-				#$curl_line =~ s{$title_text_regex}{$1};
-				if ( $curl_line !~ /^\s*$/ ) {
-					push @curl_title, $curl_line;
-					print "At end of title, line $line_no is \"$curl_line\"\n";
-				}
-				else {
-					print "At end of title, line $line_no, does not contain title text.\n";
-				}
-				last;
 			}
 
-			# If we are between <title> and </title>, push it to the array if it's not blank
-			elsif ( defined $title_start_line && $curl_line !~ /^\s*$/ ) {
+			# If we are between <title> and </title>
+			if ( defined $title_start_line && !defined $title_end_line ) {
+				$title_between_line = $line_no;
+			}
+
+			if ( $title_start_line or $title_end_line or $title_between_line == $line_no ) {
 				$curl_line =~ s{$title_text_regex}{$1};
 				if ( $curl_line !~ /^\s*$/ ) {
 					push @curl_title, $curl_line;
-					print "Between title, line $line_no is \"$curl_line\"\n";
+					print "Line $line_no is \"$curl_line\"\n";
+				}
+				if ( defined $title_end_line ) {
+					last;
 				}
 			}
 
 			# If we reach the </head> or <body> then we know we have gone too far
-			elsif ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
+			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} ) {
 				print "We reached the body or the head> element and couldn't find any page title\n";
 				last;
 			}

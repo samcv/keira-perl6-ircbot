@@ -8,7 +8,6 @@ use IPC::Open3 'open3';
 use feature 'unicode_strings';
 use utf8;
 use English;
-use Encode 'decode_utf8';
 use Time::Seconds;
 use URL::Search 'extract_urls';
 
@@ -34,7 +33,11 @@ if ( ( !defined $body ) or ( !defined $who_said ) ) {
 	print "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
 }
-elsif ( defined $username ) {
+else {
+	utf8::decode($who_said);
+	utf8::decode($body);
+}
+if ( defined $username ) {
 	$history_file        = $username . '_history.txt';
 	$tell_file           = $username . '_tell.txt';
 	$history_file_length = 20;
@@ -43,16 +46,14 @@ elsif ( defined $username ) {
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
 		or print "Could not open history file, Error $ERRNO\n";
-	binmode( $history_fh, ":encoding(UTF-8)" )
+	binmode $history_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
 	# Don't set binmode on $history_fh or it will break
-	print $history_fh "<$who_said> $body\n"
+	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
 }
-utf8::decode($who_said);
-utf8::decode($body);
 
 sub convert_from_secs {
 	my ($secs_to_convert) = @_;
@@ -83,12 +84,12 @@ sub tell_nick {
 	my ($tell_nick_who) = @_;
 	my $tell_return;
 	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode( $tell_fh, ':encoding(UTF-8)' )
+	binmode $tell_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my @tell_lines = <$tell_fh>;
 	close $tell_fh or print "Could not close $tell_file, Error $ERRNO\n";
 	open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode( $tell_fh, ':encoding(UTF-8)' )
+	binmode $tell_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my $has_been_said = 0;
 
@@ -138,7 +139,7 @@ sub tell_nick {
 			$has_been_said = 1;
 		}
 		else {
-			print $tell_fh "$tell_line\n";
+			print {$tell_fh} "$tell_line\n";
 		}
 	}
 	close $tell_fh or print 'Could not close $tell_fh' . ", Error $ERRNO\n";
@@ -183,9 +184,10 @@ sub tell_nick_command {
 	print "tell_nick_time_called: $said_time_called tell_remind_time: $tell_remind_time "
 		. "tell_who: $tell_who tell_text: $tell_text\n";
 	open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode( $tell_fh, ":encoding(UTF-8)" )
+	binmode $tell_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
-	print $tell_fh "$said_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
+	print {$tell_fh}
+		"$said_time_called $tell_remind_time <$tell_nick_who> >$tell_who< $tell_text\n"
 		or print "Failed to append to $tell_file, Error $ERRNO\n";
 
 	close $tell_fh or print "Could not close $tell_file, Error $ERRNO\n";
@@ -211,7 +213,7 @@ sub sed_replace {
 	my $replaced_said;
 	print "Trying to open $history_file\n";
 	open my $history_fh, '<', "$history_file" or print "Could not open $history_file for read\n";
-	binmode( $history_fh, ":encoding(UTF-8)" )
+	binmode $history_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
 	while ( defined( my $history_line = <$history_fh> ) ) {
@@ -260,9 +262,9 @@ sub sed_replace {
 		print "replaced_said: $replaced_said replaced_who: $replaced_who\n";
 		open my $history_fh, '>>', "$history_file"
 			or print "Could not open $history_file for write\n";
-		binmode( $history_fh, ":encoding(UTF-8)" )
+		binmode( $history_fh, ':encoding(UTF-8)' )
 			or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
-		print $history_fh '<' . $replaced_who . '> ' . $replaced_said . "\n";
+		print {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
 		close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
 		return $replaced_who, $replaced_said;
 	}
@@ -270,7 +272,6 @@ sub sed_replace {
 
 sub get_url_title {
 	my ($sub_url) = @_;
-	my @header_array;
 	print "Curl Location: \"$sub_url\"\n";
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
 	my ( $title_start_line, $title_between_line, $title_end_line ) = (0) x 3;
@@ -283,7 +284,7 @@ sub get_url_title {
 	my @curl_args     = (
 		'--compressed', '-s',              '-A',         $user_agent,
 		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
-		'--no-buffer',  '-i',              '--url',      $sub_url
+		'--no-buffer',  '-i',              '--url',      $sub_url,
 	);
 
 	# REGEX
@@ -292,27 +293,19 @@ sub get_url_title {
 	my $title_end_regex   = '</title>.*';
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
-	binmode( $CURL_OUT, ':encoding(UTF-8)' )
+	binmode $CURL_OUT, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $CURL_OUT, Error ' . "$ERRNO\n";
 
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
-		chomp $curl_line;
 
 		# Processing done only within the header
 		if ( $end_of_header == 0 ) {
-			push @header_array, $curl_line;
 
 			# Detect end of header
 			if ( $curl_line =~ /^\s*$/ ) {
 				$end_of_header = 1;
-
-				if ( $is_text == 0 ) {
-					print "Stopping because it's not text\n";
-					print join( "\n", @header_array );
-					last;
-				}
-				if ( defined $new_location ) {
-					print "New Location: \"$new_location\" STOPPING at end of header\n";
+				if ( $is_text == 0 || defined $new_location ) {
+					print "Stopping because it's not text or a new location is defined\n";
 					last;
 				}
 			}
@@ -327,9 +320,8 @@ sub get_url_title {
 			elsif ( $curl_line =~ /^Set-Cookie.*/i ) {
 				$has_cookie++;
 			}
-			elsif ( $curl_line =~ /^Location:\s*/i ) {
+			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) {
 				$new_location = $curl_line;
-				$new_location =~ s/^Location:\s*(\S*)\s*$/$1/i;
 			}
 		}
 
@@ -347,7 +339,7 @@ sub get_url_title {
 			}
 
 			# If we are between <title> and </title>
-			if ( $title_start_line != 0 && $title_end_line == 0 ) {
+			elsif ( $title_start_line != 0 && $title_end_line == 0 ) {
 				$title_between_line = $line_no;
 			}
 
@@ -370,12 +362,12 @@ sub get_url_title {
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
 
 	# Print out $is_text and $title's values
-	print "Ended on line $line_no"
-		. '  Is Text: '
+	print "Ended on line $line_no  "
+		. 'Is Text: '
 		. "$is_text  "
 		. 'Non-Blank Lines in Title: '
-		. scalar @curl_title
-		. '  End of Header: '
+		. scalar @curl_title . q(  )
+		. 'End of Header: '
 		. "$end_of_header\n";
 
 	if ( $curl_title[0] and ( !defined $new_location ) ) {
@@ -396,10 +388,15 @@ sub get_url_title {
 		$title = decode_entities($title);
 		print "Title is: \"$title\"\n";
 	}
-	else {
-		print "Didn't get title or a new location is defined\n";
-	}
-	return $title, $new_location, $is_text, $is_cloudflare, $has_cookie, $is_404;
+	my %object = (
+		title         => $title,
+		new_location  => $new_location,
+		is_text       => $is_text,
+		is_cloudflare => $is_cloudflare,
+		has_cookie    => $has_cookie,
+		is_404        => $is_404,
+	);
+	return %object;
 }
 
 sub find_url {
@@ -432,57 +429,32 @@ sub find_url {
 		}
 		my $url_new_location;
 
-		# ONE
-		my ($url_title,         $url_new_location_1, $url_is_text,
-			$url_is_cloudflare, $url_has_cookie,     $url_is_404
-		) = get_url_title($find_url_url);
+		my %url_object = get_url_title($find_url_url);
+
 		my $redirects = 0;
-		my ( $url_new_location_2, $url_new_location_3 );
-		if ( defined $url_new_location_1 ) {
-			(   $url_title,         $url_new_location_2, $url_is_text,
-				$url_is_cloudflare, $url_has_cookie,     $url_is_404
-			) = ();
-
-			# TWO
-			(   $url_title,         $url_new_location_2, $url_is_text,
-				$url_is_cloudflare, $url_has_cookie,     $url_is_404
-			) = get_url_title($url_new_location_1);
-
-			if ( defined $url_new_location_2 ) {
-				(   $url_title,         $url_new_location_3, $url_is_text,
-					$url_is_cloudflare, $url_has_cookie,     $url_is_404
-				) = ();
-
-				# THREE
-				(   $url_title,         $url_new_location_3, $url_is_text,
-					$url_is_cloudflare, $url_has_cookie,     $url_is_404
-				) = get_url_title($url_new_location_2);
+		my ( $url_new_location_1, $url_new_location_2, $url_new_location_3 );
+		while ( defined $url_object{new_location} and $redirects < 3 ) {
+			$redirects++;
+			if ( defined $url_object{new_location} ) {
+				$url_new_location = $url_object{new_location};
+				%url_object = get_url_title($url_new_location);
 			}
-
-		}
-		if ( defined $url_new_location_3 ) {
-			print "Too many redirects!!! There are at least three\n";
-		}
-		elsif ( defined $url_new_location_2 ) {
-			print "Found url new location 2\n";
-			$url_new_location = $url_new_location_2;
-		}
-		elsif ( defined $url_new_location_1 ) {
-			print "Found url new location 1\n";
-			$url_new_location = $url_new_location_1;
 		}
 
-		if ( $url_is_text && defined $url_title ) {
-			my $short_title = substr $url_title, 0, $max_title_length;
-			if ( $url_title ne $short_title and $find_url_url !~ m{twitter[.]com/.+/status} ) {
-				$url_title = $short_title . ' ...';
+		if ( $url_object{is_text} && defined $url_object{title} ) {
+			my $short_title = substr $url_object{title}, 0, $max_title_length;
+			if (    $url_object{title} ne $short_title
+				and $find_url_url !~ m{twitter[.]com/.+/status} )
+			{
+				$url_object{'title'} = $short_title . ' ...';
 			}
-			if ( !$url_title ) {
+			if ( !$url_object{title} ) {
 				print "find_url return, No title found right before print\n";
 				return 0;
 			}
-			return ( 1, $find_url_url, $url_is_text, $url_title, $url_new_location,
-				$url_is_cloudflare, $url_has_cookie, $url_is_404 );
+			return ( 1, $find_url_url, $url_object{is_text}, $url_object{title}, $url_new_location,
+				$url_object{is_cloudflare},
+				$url_object{has_cookie}, $url_object{is_404} );
 		}
 		else {
 			print "find_url return, it's not text\n";
@@ -582,13 +554,16 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 			print "%$main_url_formatted_text\n";
 		}
 	}
-	elsif ( !defined $main_url_title and $main_find_url_success == 1 ) {
+	elsif ( !defined $main_url_title && $main_find_url_success == 1 ) {
 		print "No url title found right before channel message\n";
 	}
 }
 
 if ( defined $username ) {
 	if ( $username ne q() ) {
+
+		#START
+		#END
 		if ( $body =~ /^!tell/ ) {
 			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
 				print "%$tell_help_text\n";
@@ -616,4 +591,4 @@ if ( defined $username ) {
 	}
 }
 
-exit;
+exit 0;

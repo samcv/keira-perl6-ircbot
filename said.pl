@@ -53,6 +53,66 @@ if ( defined $username ) {
 	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
+	my $seen_file = $username . '_seen';
+	my $seen_date = time;
+	open my $seen_fh, '<', "$seen_file"
+		or print "Could not open seen file, Error $ERRNO\n";
+	my @seen_array = <$seen_fh>;
+	my @seen_after_array;
+	my $is_in_seen = 0;
+	foreach my $seen_line (@seen_array) {
+		chomp $seen_line;
+		my $who_seen = $seen_line;
+		$who_seen =~ s/^<(\S+?)>.*/$1/;
+		my $seen_when = $seen_line;
+		$seen_when =~ s/^<\S+?> (\d+).*/$1/;
+		print "who seen: $who_seen seen when: $seen_when\n";
+		if ( $who_said !~ /$who_seen/i ) {
+			print "Adding to array\n";
+			push @seen_after_array, "<$who_seen> $seen_when";
+		}
+		else {
+			print "Say before\n";
+			$is_in_seen = 0;
+		}
+
+
+	}
+	if ( $is_in_seen == 0 ) {
+		push @seen_after_array, "<$who_said> $seen_date";
+		print "Haven't seen this person before, adding\n";
+	}
+	open $seen_fh, '>', "$seen_file"
+		or print "Could not open seen file, Error $ERRNO\n";
+	print {$seen_fh} join( "\n", @seen_after_array);
+	close $seen_fh;
+
+	if ( $body =~ /^!seen/ ) {
+		if ( $body !~ /^!seen \S+/ or $body =~ /^!seen help/ ) {
+			print "%Usage: !seen nickname, tells the last time they spoke\n";
+		}
+		elsif ( $body =~ /^!seen $username ?\s*/ ) {
+			print "%I'm right here, silly!\n";
+		}
+		else {
+			my $asked_who = $body;
+			$asked_who =~ s/^!seen (\S+)/$1/;
+			foreach my $seen_command_line (@seen_after_array) {
+				my $who_seen = $seen_command_line;
+				$who_seen =~ s/^<(\S+?)>.*/$1/;
+				my $seen_when = $seen_command_line;
+				$seen_when =~ s/^<\S+?> (\d+).*/$1/;
+
+				print "who seen: $who_seen seen when: $seen_when\n";
+				if ( $who_seen =~ /^$asked_who?.?$/i ) {
+					my $this_return = format_time($seen_when);
+					print "%I last saw $who_seen say something " . $this_return . "\n";
+				}
+
+			}
+		}
+
+	}
 }
 
 sub convert_from_secs {
@@ -80,6 +140,43 @@ sub convert_from_secs {
 	return $secs, $mins, $hours, $days, $years;
 }
 
+sub format_time {
+	my ($format_time_arg) = @_;
+	my $format_time_now = time;
+	my $tell_return;
+	my $tell_time_diff = $format_time_now - $format_time_arg;
+	print "Time diff = $tell_time_diff format_time_now: $format_time_now format_time_arg $format_time_arg\n";
+	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years )
+		= convert_from_secs($tell_time_diff);
+	if ( defined $tell_years ) {
+		$tell_return
+			= "[$tell_years"
+			. "y $tell_days"
+			. "d $tell_hours"
+			. "h $tell_mins"
+			. "m $tell_secs"
+			. 's ago]';
+	}
+	elsif ( defined $tell_days ) {
+		$tell_return
+			= "[$tell_days"
+			. "d $tell_hours"
+			. "h $tell_mins"
+			. "m $tell_secs"
+			. 's ago]';
+	}
+	elsif ( defined $tell_hours ) {
+		$tell_return
+			= "[$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
+	}
+	elsif ( defined $tell_mins ) {
+		$tell_return = "[$tell_mins" . "m  $tell_secs" . 's ago]';
+	}
+	else {
+		$tell_return = "[$tell_time_diff" . "s ago]";
+	}
+	return $tell_return;
+}
 sub tell_nick {
 	my ($tell_nick_who) = @_;
 	my $tell_return;

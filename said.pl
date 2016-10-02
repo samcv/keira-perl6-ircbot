@@ -37,29 +37,37 @@ else {
 	utf8::decode($who_said);
 	utf8::decode($body);
 }
-if ( defined $username ) {
+if ( defined $username and $username ne '' ) {
 	$history_file        = $username . '_history.txt';
 	$tell_file           = $username . '_tell.txt';
 	$history_file_length = 20;
 	utf8::decode($username);
 
+	
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
 		or print "Could not open history file, Error $ERRNO\n";
 	binmode $history_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
-	# Don't set binmode on $history_fh or it will break
 	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
+
+}
+
+sub seen_nick {
 	my $seen_file = $username . '_seen';
 	my $seen_date = time;
 	open my $seen_fh, '<', "$seen_file"
 		or print "Could not open seen file, Error $ERRNO\n";
+	binmode $seen_fh, ':encoding(UTF-8)'
+		or print 'Failed to set binmode on $seen_fh, Error' . "$ERRNO\n";
+
 	my @seen_array = <$seen_fh>;
 	my @seen_after_array;
 	my $is_in_seen = 0;
+
 	foreach my $seen_line (@seen_array) {
 		chomp $seen_line;
 		my $who_seen = $seen_line;
@@ -67,7 +75,7 @@ if ( defined $username ) {
 		my $seen_when = $seen_line;
 		$seen_when =~ s/^<\S+?> (\d+).*/$1/;
 		print "who seen: $who_seen seen when: $seen_when\n";
-		if ( $who_said !~ /$who_seen/i ) {
+		if ( $who_said !~ /^$who_seen?.?/i ) {
 			print "Adding to array\n";
 			push @seen_after_array, "<$who_seen> $seen_when";
 		}
@@ -76,7 +84,6 @@ if ( defined $username ) {
 			$is_in_seen = 0;
 		}
 
-
 	}
 	if ( $is_in_seen == 0 ) {
 		push @seen_after_array, "<$who_said> $seen_date";
@@ -84,7 +91,9 @@ if ( defined $username ) {
 	}
 	open $seen_fh, '>', "$seen_file"
 		or print "Could not open seen file, Error $ERRNO\n";
-	print {$seen_fh} join( "\n", @seen_after_array);
+	binmode $seen_fh, ':encoding(UTF-8)'
+		or print 'Failed to set binmode on $seen_fh, Error' . "$ERRNO\n";
+	print {$seen_fh} join( "\n", @seen_after_array );
 	close $seen_fh;
 
 	if ( $body =~ /^!seen/ ) {
@@ -145,7 +154,8 @@ sub format_time {
 	my $format_time_now = time;
 	my $tell_return;
 	my $tell_time_diff = $format_time_now - $format_time_arg;
-	print "Time diff = $tell_time_diff format_time_now: $format_time_now format_time_arg $format_time_arg\n";
+	print
+		"Time diff = $tell_time_diff format_time_now: $format_time_now format_time_arg $format_time_arg\n";
 	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years )
 		= convert_from_secs($tell_time_diff);
 	if ( defined $tell_years ) {
@@ -158,16 +168,10 @@ sub format_time {
 			. 's ago]';
 	}
 	elsif ( defined $tell_days ) {
-		$tell_return
-			= "[$tell_days"
-			. "d $tell_hours"
-			. "h $tell_mins"
-			. "m $tell_secs"
-			. 's ago]';
+		$tell_return = "[$tell_days" . "d $tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
 	}
 	elsif ( defined $tell_hours ) {
-		$tell_return
-			= "[$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
+		$tell_return = "[$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
 	}
 	elsif ( defined $tell_mins ) {
 		$tell_return = "[$tell_mins" . "m  $tell_secs" . 's ago]';
@@ -177,6 +181,7 @@ sub format_time {
 	}
 	return $tell_return;
 }
+
 sub tell_nick {
 	my ($tell_nick_who) = @_;
 	my $tell_return;
@@ -202,37 +207,9 @@ sub tell_nick {
 			my $tell_nick_time_tell = $tell_line;
 			$tell_nick_time_tell =~ s/^(\d+) .*/$1/;
 			$tell_line =~ s{^\d+ \d+ }{};
-			my $tell_time_diff = $said_time_called - $tell_nick_time_tell;
-			print "Tell nick time diff: $tell_time_diff\n";
-			my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years )
-				= convert_from_secs($tell_time_diff);
-			if ( defined $tell_years ) {
-				$tell_return
-					= "$tell_line [$tell_years"
-					. "y $tell_days"
-					. "d $tell_hours"
-					. "h $tell_mins"
-					. "m $tell_secs"
-					. 's ago]';
-			}
-			elsif ( defined $tell_days ) {
-				$tell_return
-					= "$tell_line [$tell_days"
-					. "d $tell_hours"
-					. "h $tell_mins"
-					. "m $tell_secs"
-					. 's ago]';
-			}
-			elsif ( defined $tell_hours ) {
-				$tell_return
-					= "$tell_line [$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
-			}
-			elsif ( defined $tell_mins ) {
-				$tell_return = "$tell_line [$tell_mins" . "m  $tell_secs" . 's ago]';
-			}
-			else {
-				$tell_return = "$tell_line [$tell_time_diff" . "s ago]";
-			}
+
+			my $tell_formatted_time = format_time($tell_nick_time_tell);
+			$tell_return   = "$tell_line " . $tell_formatted_time;
 			$has_been_said = 1;
 		}
 		else {
@@ -648,11 +625,9 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 	}
 }
 
-if ( defined $username ) {
+if ( defined $username and $username ne q() ) {
 	if ( $username ne q() ) {
 
-		#START
-		#END
 		if ( $body =~ /^!tell/ ) {
 			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
 				print "%$tell_help_text\n";

@@ -14,15 +14,16 @@ use URL::Search 'extract_urls';
 binmode STDOUT, ':encoding(UTF-8)' or print "Failed to set binmode on STDOUT, Error $ERRNO\n";
 our $VERSION = 0.4;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
-my ( $who_said, $body, $username ) = @ARGV;
+my ( $who_said, $body, $bot_username ) = @ARGV;
 
 my ( $history_file, $tell_file );
 my $history_file_length = 20;
 
 my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
 	. 'repo url. Also posts the page title of any website pasted in channel';
+my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
 
-my $tell_help_text    = 'Usage: !tell nick \"message to tell them\"';
+my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
 
 
@@ -37,13 +38,13 @@ else {
 	utf8::decode($who_said);
 	utf8::decode($body);
 }
-if ( defined $username and $username ne '' ) {
-	$history_file        = $username . '_history.txt';
-	$tell_file           = $username . '_tell.txt';
+if ( defined $bot_username and $bot_username ne q() ) {
+	$history_file        = $bot_username . '_history.txt';
+	$tell_file           = $bot_username . '_tell.txt';
 	$history_file_length = 20;
-	utf8::decode($username);
+	utf8::decode($bot_username);
 
-	
+
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
 		or print "Could not open history file, Error $ERRNO\n";
@@ -57,7 +58,7 @@ if ( defined $username and $username ne '' ) {
 }
 
 sub seen_nick {
-	my $seen_file = $username . '_seen';
+	my $seen_file = $bot_username . '_seen';
 	my $seen_date = time;
 	open my $seen_fh, '<', "$seen_file"
 		or print "Could not open seen file, Error $ERRNO\n";
@@ -74,20 +75,26 @@ sub seen_nick {
 		$who_seen =~ s/^<(\S+?)>.*/$1/;
 		my $seen_when = $seen_line;
 		$seen_when =~ s/^<\S+?> (\d+).*/$1/;
-		print "who seen: $who_seen seen when: $seen_when\n";
+
+		# If the person who just said something doesn't match, then we need to push it to the array
+		# So we don't forget about them.
 		if ( $who_said !~ /^$who_seen?.?/i ) {
-			print "Adding to array\n";
 			push @seen_after_array, "<$who_seen> $seen_when";
 		}
+		# If it does match it means we need to update the last time the person has spoke,
+		# they will be pushed to the array after this foreach loop is done.
+		# We set is_in_seen to 1 so we will later be able to send a customized message to new
+		# visitors to the IRC channel.
 		else {
-			print "Say before\n";
-			$is_in_seen = 0;
+			$is_in_seen = 1;
 		}
 
+
 	}
+	push @seen_after_array, "<$who_said> $seen_date";
 	if ( $is_in_seen == 0 ) {
-		push @seen_after_array, "<$who_said> $seen_date";
-		print "Haven't seen this person before, adding\n";
+		print "Haven't seen \"$who_said\" before, adding\n";
+		print "%$welcome_text\n";
 	}
 	open $seen_fh, '>', "$seen_file"
 		or print "Could not open seen file, Error $ERRNO\n";
@@ -100,7 +107,7 @@ sub seen_nick {
 		if ( $body !~ /^!seen \S+/ or $body =~ /^!seen help/ ) {
 			print "%Usage: !seen nickname, tells the last time they spoke\n";
 		}
-		elsif ( $body =~ /^!seen $username ?\s*/ ) {
+		elsif ( $body =~ /^!seen $bot_username ?\s*/ ) {
 			print "%I'm right here, silly!\n";
 		}
 		else {
@@ -588,12 +595,12 @@ sub url_format_text {
 # MAIN
 # .bots reporting functionality
 if ( $body =~ /[.]bots.*/ ) {
-	print "%$username reporting in! [perl] $repo_url v$VERSION\n";
+	print "%$bot_username reporting in! [perl] $repo_url v$VERSION\n";
 }
 
 # Sed functionality. Only called if the bot's username is set and it can know what history file
 # to use.
-elsif ( $body =~ m{^s/.+/} and defined $username ) {
+elsif ( $body =~ m{^s/.+/} and defined $bot_username ) {
 	my ( $sed_who, $sed_text ) = sed_replace($body);
 	my $sed_short_text = substr $sed_text, 0, '250';
 	if ( $sed_text ne $sed_short_text ) {
@@ -625,8 +632,8 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 	}
 }
 
-if ( defined $username and $username ne q() ) {
-	if ( $username ne q() ) {
+if ( defined $bot_username and $bot_username ne q() ) {
+	if ( $bot_username ne q() ) {
 
 		if ( $body =~ /^!tell/ ) {
 			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {

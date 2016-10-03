@@ -16,12 +16,12 @@ use Encode 'decode_utf8';
 # Debian package list:
 # 	perl curl moreutils
 # Debian perl package list:
-# 	libpoe-component-sslify-perl libbot-basicbot-perl
+# 	libpoe-component-sslify-perl libbot-basicbot-perl libencode-detect-perl
 
 # Arch package list:
 # 	perl curl moreutils
 # Arch AUR package list:
-# 	perl-bot-basicbot
+# 	perl-bot-basicbot perl-encode-detect
 
 binmode( STDOUT, ':encoding(UTF-8)' ) or die "Failed to set binmode on STDOUT, Error $?\n";
 
@@ -48,6 +48,7 @@ sub said {
 	my $who_said = $message->{who};
 	my $channel  = $message->{channel};
 	my @to_say   = ();
+	my $event = 'chansaid';
 
 	utf8::encode($who_said);
 	utf8::encode($body);
@@ -73,10 +74,58 @@ sub said {
 
 	}
 	close $SAID_OUT;
+	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event,
+		$bot_username;
+	open my $CHANSAID_OUT, '-|', 'perl', @chansaid_args
+		or print 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
+
+	binmode( $CHANSAID_OUT, ":encoding(UTF-8)" )
+		or print 'Failed to set binmode on $CHANSAID_OUT, Error ' . "$?\n";
+
+	while ( defined( my $line = <$CHANSAID_OUT> ) ) {
+		print $line;
+		if ( $line =~ s/^%// ) {
+			$self->say(
+				{   channel => ( $self->channels ),
+					body    => $line,
+				}
+			);
+		}
+
+	}
+	close $CHANSAID_OUT;
 	return;
 
 }
 
+sub userquit {
+	my ( $self, $message ) = @_;
+	my $chanpart_channel = $message->{channel};
+	my $chanpart_nick    = $message->{who};
+	my $event            = 'chanpart';
+
+	push my (@userquit_args), 'channel_event.pl', $chanpart_nick, $server_channels, $event,
+		$bot_username;
+	open my $USERQUIT_OUT, '-|', 'perl', @userquit_args
+		or print 'Cannot open $USERQUIT_OUT ' . "pipe, Error $?\n";
+
+	binmode( $USERQUIT_OUT, ":encoding(UTF-8)" )
+		or print 'Failed to set binmode on $USERQUIT_OUT, Error ' . "$?\n";
+
+	while ( defined( my $line = <$USERQUIT_OUT> ) ) {
+		print $line;
+		if ( $line =~ s/^%// ) {
+			$self->say(
+				{   channel => ( $self->channels ),
+					body    => $line,
+				}
+			);
+		}
+
+	}
+	close $USERQUIT_OUT;
+	return;
+}
 sub chanjoin {
 	my ( $self, $message ) = @_;
 	my $chanjoin_channel = $message->{channel};

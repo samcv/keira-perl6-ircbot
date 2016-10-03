@@ -16,10 +16,8 @@ if ( !defined $nick || !defined $channel || !defined $event || !defined $bot_use
 }
 elsif ( $event ne 'chanjoin' and $event ne 'chanpart' and $event ne 'chansaid' ) {
 	print "Unknown event!  I only know about chanjoin, chanpart and chansaid\n";
-	exit;
+	exit 1;
 }
-print "Nick $nick $event channel $channel\n";
-
 my $is_in_file         = 0;
 my $channel_event_file = $bot_username . '_event.txt';
 my $event_date         = time;
@@ -32,8 +30,6 @@ if ( -f $channel_event_file ) {
 
 # If the event file already exists
 if ( $event_file_exists == 1 ) {
-
-	# print "Event file found\n";
 	open my $event_read_fh, '<', "$channel_event_file"
 		or print "Could not open seen file, Error $ERRNO\n";
 	binmode $event_read_fh, ':encoding(UTF-8)'
@@ -56,7 +52,6 @@ if ( $event_file_exists == 1 ) {
 
 		# If it matches then we need to update its contents
 		else {
-			print "Matching, attempting to modify contents\n";
 			$is_in_file       = 1;
 			$event_who_update = $nick;
 
@@ -113,3 +108,4 @@ binmode $event_write_fh, ':encoding(UTF-8)'
 	or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
 print {$event_write_fh} join( "\n", @event_after_array );
 close $event_write_fh;
+exit 0;

@@ -76,35 +76,39 @@ sub seen_nick {
 		or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
 	my @event_array = <$event_read_fh>;
 	my ( $event_who_update, $event_spoke_update, $event_join_update, $event_part_update );
-
+	my %event_data;
 	foreach my $line (@event_array) {
 		chomp $line;
 		$line =~ m/^<(\S+?)> (\d+) (\d+) (\d+)/;
-		my $event_who_file   = $1;
-		my $event_spoke_file = $2;
-		my $event_join_file  = $3;
-		my $event_part_file  = $4;
+		my %event_file_data;
+		$event_file_data{who}      = $1;
+		$event_file_data{chansaid} = $2;
+		$event_file_data{chanjoin} = $3;
+		$event_file_data{chanpart} = $4;
 
 		# If the nick matches we need to save the data
-		if ( $nick =~ /^$event_who_file?.?/i ) {
-			$is_in_file         = 1;
-			$event_who_update   = $event_who_file;
-			$event_spoke_update = $event_spoke_file;
-			$event_join_update  = $event_join_file;
-			$event_part_update  = $event_part_file;
+		if ( $nick =~ /^$event_file_data{who}?.?/i ) {
+			$is_in_file = 1;
+			%event_data = %event_file_data;
 		}
 	}
 	if ( $is_in_file == 1 ) {
-		$return_string = $event_who_update;
-		if ( $event_spoke_update != 0 ) {
-			$return_string = $return_string . " Last spoke: " . format_time($event_spoke_update);
-		}
-		if ( $event_join_update != 0 ) {
-			$return_string = $return_string . " Last joined: " . format_time($event_join_update);
-		}
-		if ( $event_part_update != 0 ) {
-			$return_string
-				= $return_string . " Last parted/quit: " . format_time($event_part_update);
+		$return_string = $event_data{who};
+
+		my %text_strings = (
+			chanjoin => ' Last joined: ',
+			chanpart => ' Last parted/quit: ',
+			chansaid => ' Last spoke: '
+		);
+
+		# Sort by most recent event
+		foreach my $chan_event ( sort { $event_data{$b} <=> $event_data{$a} } keys %event_data ) {
+			if ( $event_data{$chan_event} != 0 ) {
+				$return_string
+					= $return_string
+					. $text_strings{$chan_event}
+					. format_time( $event_data{$chan_event} );
+			}
 		}
 		print "%$return_string\n";
 	}

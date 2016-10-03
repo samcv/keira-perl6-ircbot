@@ -9,7 +9,6 @@ use feature 'unicode_strings';
 binmode STDOUT, ':encoding(UTF-8)' or print "Failed to set binmode on STDOUT, Error $ERRNO\n";
 
 my ( $nick, $channel, $event, $bot_username ) = @ARGV;
-print "nick: \"$nick\" channel: \"$channel\" event: \"$event\" bot username: \"$bot_username\"\n";
 if ( !defined $nick || !defined $channel || !defined $event || !defined $bot_username ) {
 	print "Usage: channel_event.pl nick channel event bot_username\n";
 	exit 1;
@@ -21,7 +20,6 @@ elsif ( $event ne 'chanjoin' and $event ne 'chanpart' and $event ne 'chansaid' )
 my $is_in_file         = 0;
 my $channel_event_file = $bot_username . '_event.txt';
 my $event_date         = time;
-print "My event date is $event_date\n";
 my @event_after_array;
 my $event_file_exists = 0;
 if ( -f $channel_event_file ) {
@@ -36,37 +34,36 @@ if ( $event_file_exists == 1 ) {
 		or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
 	my @event_array = <$event_read_fh>;
 	my ( $event_who_update, $event_spoke_update, $event_join_update, $event_part_update );
-	foreach my $line2 (@event_array) {
-		chomp $line2;
-		$line2 =~ m/^<(\S+?)> (\d+) (\d+) (\d+)/;
+	foreach my $line (@event_array) {
+		chomp $line;
+		$line =~ m/^<(\S+?)> (\d+) (\d+) (\d+)/;
 		my $event_who_file   = $1;
 		my $event_spoke_file = $2;
 		my $event_join_file  = $3;
 		my $event_part_file  = $4;
 
-		# If the person on this line doesn't match, then we need to push it to the array
-		# So we don't forget about them.
-		if ( $nick !~ /^$event_who_file?.?/i ) {
-			push @event_after_array, "$line2";
-		}
-
 		# If it matches then we need to update its contents
-		else {
+		if ( $nick =~ /^$event_who_file?.?/i ) {
 			$is_in_file       = 1;
 			$event_who_update = $nick;
 
 			if ( $event eq 'chanjoin' ) { $event_join_update  = $event_date }
-			if ( $event eq 'chanpart' ) { $event_part_update  = $event_date }
-			if ( $event eq 'chansaid' ) { $event_spoke_update = $event_date }
+			elsif ( $event eq 'chanpart' ) { $event_part_update  = $event_date }
+			elsif ( $event eq 'chansaid' ) { $event_spoke_update = $event_date }
 
 			if ( !defined $event_join_update )  { $event_join_update  = $event_join_file }
 			if ( !defined $event_part_update )  { $event_part_update  = $event_part_file }
 			if ( !defined $event_spoke_update ) { $event_spoke_update = $event_spoke_file }
 			print
-				"UPDATE: who: $event_who_update spoke: $event_spoke_update join: $event_join_update part: $event_part_update\n";
+				"Channel event update: who: $event_who_update spoke: $event_spoke_update join: $event_join_update part: $event_part_update\n";
 
 			push @event_after_array,
 				"<$event_who_update> $event_spoke_update $event_join_update $event_part_update";
+		}
+		# If the person on this line doesn't match, then we need to push it to the array
+		# So we don't forget about them.
+		else {
+			push @event_after_array, "$line";
 		}
 
 	}

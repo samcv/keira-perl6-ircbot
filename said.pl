@@ -17,7 +17,7 @@ our $VERSION = 0.4;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my ( $who_said, $body, $bot_username ) = @ARGV;
 
-my ( $history_file, $tell_file );
+my ( $history_file, $tell_file, $channel_event_file );
 my $history_file_length = 20;
 
 my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
@@ -28,7 +28,7 @@ my $welcome_text
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
 
-
+print "Body before is $body\n";
 my $said_time_called = time;
 
 if ( ( !defined $body ) or ( !defined $who_said ) ) {
@@ -41,8 +41,10 @@ else {
 	utf8::decode($body);
 }
 if ( defined $bot_username and $bot_username ne q() ) {
-	$history_file        = $bot_username . '_history.txt';
-	$tell_file           = $bot_username . '_tell.txt';
+	$history_file       = $bot_username . '_history.txt';
+	$tell_file          = $bot_username . '_tell.txt';
+	$channel_event_file = $bot_username . '_event.txt';
+
 	$history_file_length = 20;
 	utf8::decode($bot_username);
 
@@ -60,77 +62,53 @@ if ( defined $bot_username and $bot_username ne q() ) {
 }
 
 sub seen_nick {
-	my $seen_file = $bot_username . '_seen.txt';
-	my $seen_date = time;
-	open my $seen_fh, '<', "$seen_file"
+	my ( $seen_who_said, $seen_cmd ) = @_;
+	my $nick = $seen_cmd;
+	$nick =~ s/^!seen (\S+).*/$1/;
+	my $event_file_exists = 0;
+	my @event_after_array;
+	my $is_in_file;
+	my $return_string;
+
+	open my $event_read_fh, '<', "$channel_event_file"
 		or print "Could not open seen file, Error $ERRNO\n";
-	binmode $seen_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $seen_fh, Error' . "$ERRNO\n";
+	binmode $event_read_fh, ':encoding(UTF-8)'
+		or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
+	my @event_array = <$event_read_fh>;
+	my ( $event_who_update, $event_spoke_update, $event_join_update, $event_part_update );
 
-	my @seen_array = <$seen_fh>;
-	my @seen_after_array;
-	my $is_in_seen = 0;
+	foreach my $line (@event_array) {
+		chomp $line;
+		$line =~ m/^<(\S+?)> (\d+) (\d+) (\d+)/;
+		my $event_who_file   = $1;
+		my $event_spoke_file = $2;
+		my $event_join_file  = $3;
+		my $event_part_file  = $4;
 
-	foreach my $seen_line (@seen_array) {
-		chomp $seen_line;
-		my $who_seen = $seen_line;
-		$who_seen =~ s/^<(\S+?)>.*/$1/;
-		my $seen_when = $seen_line;
-		$seen_when =~ s/^<\S+?> (\d+).*/$1/;
-
-		# If the person who just said something doesn't match, then we need to push it to the array
-		# So we don't forget about them.
-		if ( $who_said !~ /^$who_seen?.?/i ) {
-			push @seen_after_array, "<$who_seen> $seen_when";
+		# If the nick matches we need to save the data
+		if ( $nick =~ /^$event_who_file?.?/i ) {
+			$is_in_file         = 1;
+			$event_who_update   = $event_who_file;
+			$event_spoke_update = $event_spoke_file;
+			$event_join_update  = $event_join_file;
+			$event_part_update  = $event_part_file;
 		}
-
-		# If it does match it means we need to update the last time the person has spoke,
-		# they will be pushed to the array after this foreach loop is done.
-		# We set is_in_seen to 1 so we will later be able to send a customized message to new
-		# visitors to the IRC channel.
-		else {
-			$is_in_seen = 1;
-		}
-
 	}
-	push @seen_after_array, "<$who_said> $seen_date";
-	if ( $is_in_seen == 0 ) {
-		print "Haven't seen \"$who_said\" before, adding\n";
-		print "%$welcome_text\n";
+	if ( $is_in_file == 1 ) {
+		$return_string = $event_who_update;
+		if ( $event_spoke_update != 0 ) {
+			$return_string = $return_string . " Last spoke: " . format_time($event_spoke_update);
+		}
+		if ( $event_join_update != 0 ) {
+			$return_string = $return_string . " Last joined: " . format_time($event_join_update);
+		}
+		if ( $event_part_update != 0 ) {
+			$return_string
+				= $return_string . " Last parted/quit: " . format_time($event_part_update);
+		}
+		print "%$return_string\n";
 	}
-	open $seen_fh, '>', "$seen_file"
-		or print "Could not open seen file, Error $ERRNO\n";
-	binmode $seen_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $seen_fh, Error' . "$ERRNO\n";
-	print {$seen_fh} join( "\n", @seen_after_array );
-	close $seen_fh;
 
-	if ( $body =~ /^!seen/ ) {
-		if ( $body !~ /^!seen \S+/ or $body =~ /^!seen help/ ) {
-			print "%Usage: !seen nickname, tells the last time they spoke\n";
-		}
-		elsif ( $body =~ /^!seen $bot_username ?\s*/ ) {
-			print "%I'm right here, silly!\n";
-		}
-		else {
-			my $asked_who = $body;
-			$asked_who =~ s/^!seen (\S+)/$1/;
-			foreach my $seen_command_line (@seen_after_array) {
-				my $who_seen = $seen_command_line;
-				$who_seen =~ s/^<(\S+?)>.*/$1/;
-				my $seen_when = $seen_command_line;
-				$seen_when =~ s/^<\S+?> (\d+).*/$1/;
-
-				print "who seen: $who_seen seen when: $seen_when\n";
-				if ( $who_seen =~ /^$asked_who?.?$/i ) {
-					my $this_return = format_time($seen_when);
-					print "%I last saw $who_seen say something " . $this_return . "\n";
-				}
-
-			}
-		}
-
-	}
 }
 
 sub convert_from_secs {
@@ -163,31 +141,26 @@ sub format_time {
 	my $format_time_now = time;
 	my $tell_return;
 	my $tell_time_diff = $format_time_now - $format_time_arg;
-	print
-		"Time diff = $tell_time_diff format_time_now: $format_time_now format_time_arg $format_time_arg\n";
+
 	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years )
 		= convert_from_secs($tell_time_diff);
+	$tell_return = '[';
 	if ( defined $tell_years ) {
-		$tell_return
-			= "[$tell_years"
-			. "y $tell_days"
-			. "d $tell_hours"
-			. "h $tell_mins"
-			. "m $tell_secs"
-			. 's ago]';
+		$tell_return = $tell_return . $tell_years . 'y ';
 	}
-	elsif ( defined $tell_days ) {
-		$tell_return = "[$tell_days" . "d $tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
+	if ( defined $tell_days ) {
+		$tell_return = $tell_return . $tell_days . 'd ';
 	}
-	elsif ( defined $tell_hours ) {
-		$tell_return = "[$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
+	if ( defined $tell_hours ) {
+		$tell_return = $tell_return . $tell_hours . 'h ';
 	}
-	elsif ( defined $tell_mins ) {
-		$tell_return = "[$tell_mins" . "m $tell_secs" . 's ago]';
+	if ( defined $tell_mins ) {
+		$tell_return = $tell_return . $tell_mins . 'm ';
 	}
-	else {
-		$tell_return = "[$tell_time_diff" . "s ago]";
+	if ( defined $tell_secs ) {
+		$tell_return = $tell_return . $tell_secs . 's ';
 	}
+	$tell_return = $tell_return . 'ago]';
 	return $tell_return;
 }
 
@@ -393,18 +366,10 @@ sub get_url_title {
 			}
 
 			# Detect content type
-			elsif ( $curl_line =~ /^Content-Type:.*text/i ) {
-				$is_text = 1;
-			}
-			elsif ( $curl_line =~ /^CF-RAY:/i ) {
-				$is_cloudflare = 1;
-			}
-			elsif ( $curl_line =~ /^Set-Cookie.*/i ) {
-				$has_cookie++;
-			}
-			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) {
-				$new_location = $curl_line;
-			}
+			elsif ( $curl_line =~ /^Content-Type:.*text/i )       { $is_text       = 1 }
+			elsif ( $curl_line =~ /^CF-RAY:/i )                   { $is_cloudflare = 1 }
+			elsif ( $curl_line =~ /^Set-Cookie.*/i )              { $has_cookie++ }
+			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) { $new_location  = $curl_line }
 		}
 
 		# Processing done after the header
@@ -615,6 +580,43 @@ elsif ( $body =~ m{^s/.+/} and defined $bot_username ) {
 		print "sed_who: $sed_who sed_text: $sed_text\n";
 		print "%<$sed_who> $sed_text\n";
 	}
+}
+
+# The bot will say Yes or No if you address it with its name and there's a question mark in the
+# sentence.
+elsif ( $body =~ /$bot_username/ and $body =~ /[?]/ ) {
+	if ( $body =~ /[?]/ ) {
+		my $coin       = int rand 2;
+		my $coin_3     = int rand 3;
+		my $thing_said = $body;
+		$thing_said =~ s/^$bot_username\S?\s*//;
+		$thing_said =~ s/[?]//g;
+		if ( $body =~ /or/ ) {
+			my $count_or;
+			my $word = 'or';
+			while ( $body =~ /\b$word\b/g ) {
+				++$count_or;
+			}
+			print "There are $count_or words of or\n";
+			if ( $count_or > 2 ) {
+				print "%I don't support asking more than three things at once...yet\n";
+			}
+			elsif ( $count_or == 2 ) {
+				if    ( $coin_3 == 0 ) { print "%The first one: $thing_said\n" }
+				elsif ( $coin_3 == 1 ) { print "%The second one: $thing_said\n" }
+				elsif ( $coin_3 == 2 ) { print "%The third one: $thing_said\n" }
+			}
+			else {
+				if   ($coin) { print "%The first one: $thing_said\n" }
+				else         { print "%The second one: $thing_said\n" }
+			}
+		}
+		else {
+			if   ($coin) { print "%Yes: $thing_said\n" }
+			else         { print "%No: $thing_said\n" }
+		}
+	}
+
 }
 
 elsif ( $body =~ /^!help/i ) {

@@ -44,16 +44,25 @@ my $history_file = $bot_username . '_history.txt';
 
 sub said {
 	my ( $self, $message ) = @_;
-	my $body     = $message->{body};
-	my $who_said = $message->{who};
-	my $channel  = $message->{channel};
-	my @to_say   = ();
-	my $event = 'chansaid';
+	my $body      = $message->{body};
+	my $who_said  = $message->{who};
+	my $channel   = $message->{channel};
+	my $addressed = $message->{address};
+
+	my @to_say = ();
+	my $event  = 'chansaid';
 
 	utf8::encode($who_said);
 	utf8::encode($body);
 	utf8::encode($channel);
 	utf8::encode($bot_username);
+	utf8::encode($addressed);
+
+	# If we are being addressed BasicBot will strip the bots name from the message.
+	# Here we add it back.
+	if ( $addressed eq $bot_username ) {
+		$body = $addressed . ": $body";
+	}
 
 	push my (@said_args), 'said.pl', $who_said, $body, $bot_username;
 	open my $SAID_OUT, '-|', "perl", @said_args
@@ -61,7 +70,7 @@ sub said {
 
 	binmode( $SAID_OUT, ":encoding(UTF-8)" )
 		or print 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
-
+	print "SAIDOUT\n";
 	while ( defined( my $line = <$SAID_OUT> ) ) {
 		print $line;
 		if ( $line =~ s/^%// ) {
@@ -74,8 +83,7 @@ sub said {
 
 	}
 	close $SAID_OUT;
-	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event,
-		$bot_username;
+	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event, $bot_username;
 	open my $CHANSAID_OUT, '-|', 'perl', @chansaid_args
 		or print 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
 
@@ -126,6 +134,7 @@ sub userquit {
 	close $USERQUIT_OUT;
 	return;
 }
+
 sub chanjoin {
 	my ( $self, $message ) = @_;
 	my $chanjoin_channel = $message->{channel};

@@ -4,7 +4,8 @@ use strict;
 use warnings;
 use HTML::Entities 'decode_entities';
 use IPC::Open3 'open3';
-
+use Encode;
+use Encode::Detect;
 use feature 'unicode_strings';
 use utf8;
 use English;
@@ -21,7 +22,8 @@ my $history_file_length = 20;
 
 my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
 	. 'repo url. Also posts the page title of any website pasted in channel';
-my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
+my $welcome_text
+	= "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
@@ -58,7 +60,7 @@ if ( defined $bot_username and $bot_username ne q() ) {
 }
 
 sub seen_nick {
-	my $seen_file = $bot_username . '_seen';
+	my $seen_file = $bot_username . '_seen.txt';
 	my $seen_date = time;
 	open my $seen_fh, '<', "$seen_file"
 		or print "Could not open seen file, Error $ERRNO\n";
@@ -81,6 +83,7 @@ sub seen_nick {
 		if ( $who_said !~ /^$who_seen?.?/i ) {
 			push @seen_after_array, "<$who_seen> $seen_when";
 		}
+
 		# If it does match it means we need to update the last time the person has spoke,
 		# they will be pushed to the array after this foreach loop is done.
 		# We set is_in_seen to 1 so we will later be able to send a customized message to new
@@ -88,7 +91,6 @@ sub seen_nick {
 		else {
 			$is_in_seen = 1;
 		}
-
 
 	}
 	push @seen_after_array, "<$who_said> $seen_date";
@@ -181,7 +183,7 @@ sub format_time {
 		$tell_return = "[$tell_hours" . "h $tell_mins" . "m $tell_secs" . 's ago]';
 	}
 	elsif ( defined $tell_mins ) {
-		$tell_return = "[$tell_mins" . "m  $tell_secs" . 's ago]';
+		$tell_return = "[$tell_mins" . "m $tell_secs" . 's ago]';
 	}
 	else {
 		$tell_return = "[$tell_time_diff" . "s ago]";
@@ -372,11 +374,10 @@ sub get_url_title {
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
+
+	# Don't set BINMODE on curl's output because we will decode later on
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print "Could not open curl pipe, Error $ERRNO\n";
-	binmode $CURL_OUT, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $CURL_OUT, Error ' . "$ERRNO\n";
-
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 
 		# Processing done only within the header
@@ -462,11 +463,15 @@ sub get_url_title {
 		# Flatten the title array, putting two spaces between lines
 		$title = join q(  ), @curl_title;
 
-		# Replace carriage returns with two spaces
-		$title =~ s/\r/  /g;
+		# Detect the encoding of the title and decode it to UTF-8
+		$title = decode( "Detect", $title );
 
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
+
+		# Replace carriage returns with two spaces
+		$title =~ s/\r/  /g;
+
 		print "Title is: \"$title\"\n";
 	}
 	my %object = (
@@ -633,33 +638,32 @@ if ( $body !~ m{\#\#\s*http.?://} ) {
 }
 
 if ( defined $bot_username and $bot_username ne q() ) {
-	if ( $bot_username ne q() ) {
 
-		if ( $body =~ /^!tell/ ) {
-			if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
-				print "%$tell_help_text\n";
-			}
-			elsif ( $body =~ /^!tell in/ and $body !~ /!tell in \d+[smhd] / ) {
-				print "%$tell_in_help_text\n";
-			}
-			else {
-				print time . "Calling tell_nick_command\n";
-				tell_nick_command( $body, $who_said );
-			}
+	if ( $body =~ /^!tell/ ) {
+		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
+			print "%$tell_help_text\n";
 		}
-		if ( -f $tell_file ) {
-			print localtime(time) . "\tCalling tell_nick\n";
-			my ($tell_to_say) = tell_nick($who_said);
-			if ( defined $tell_to_say ) {
-				print "Tell to say line next\n";
-				print "%$tell_to_say\n";
-			}
+		elsif ( $body =~ /^!tell in/ and $body !~ /!tell in \d+[smhd] / ) {
+			print "%$tell_in_help_text\n";
 		}
-
-		# Trunicate history file only if the bot's username is set.
-		`tail -n $history_file_length ./$history_file | sponge ./$history_file`
-			and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+		else {
+			#print time . "Calling tell_nick_command\n";
+			tell_nick_command( $body, $who_said );
+		}
 	}
+	if ( -f $tell_file ) {
+		print localtime(time) . "\tCalling tell_nick\n";
+		my ($tell_to_say) = tell_nick($who_said);
+		if ( defined $tell_to_say ) {
+			print "Tell to say line next\n";
+			print "%$tell_to_say\n";
+		}
+	}
+
+	# Trunicate history file only if the bot's username is set.
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+		and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+
 }
 
 exit 0;

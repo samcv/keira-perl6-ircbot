@@ -28,7 +28,6 @@ my $welcome_text
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
 
-print "Body before is $body\n";
 my $said_time_called = time;
 
 if ( ( !defined $body ) or ( !defined $who_said ) ) {
@@ -40,7 +39,8 @@ else {
 	utf8::decode($who_said);
 	utf8::decode($body);
 }
-if ( defined $bot_username and $bot_username ne q() ) {
+
+sub username_defined_pre {
 	$history_file       = $bot_username . '_history.txt';
 	$tell_file          = $bot_username . '_tell.txt';
 	$channel_event_file = $bot_username . '_event.txt';
@@ -58,7 +58,6 @@ if ( defined $bot_username and $bot_username ne q() ) {
 	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
-
 }
 
 sub seen_nick {
@@ -341,8 +340,9 @@ sub get_url_title {
 		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
 		'--no-buffer',  '-i',              '--url',      $sub_url,
 	);
-	print join(' ', @curl_args);
+	print join( ' ', @curl_args );
 	print "\n";
+
 	# REGEX
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
@@ -460,7 +460,9 @@ sub find_url {
 	my $max_title_length = 120;
 	my $error_line       = 0;
 	my @find_url_array   = extract_urls $find_url_caller_text;
-
+	if ( $find_url_caller_text =~ m{\#\#\s*http.?://} ) {
+		return 0;
+	}
 	foreach my $single_url (@find_url_array) {
 
 		# Make sure we don't use FTP
@@ -497,11 +499,8 @@ sub find_url {
 		$url_object{new_location} = $url_new_location;
 
 		if ( $url_object{is_text} && defined $url_object{title} ) {
-			my $short_title = substr $url_object{title}, 0, $max_title_length;
-			if (    $url_object{title} ne $short_title
-				and $find_url_url !~ m{twitter[.]com/.+/status} )
-			{
-				$url_object{'title'} = $short_title . ' ...';
+			if ( $find_url_url !~ m{twitter[.]com/.+/status} ) {
+				$url_object{title} = shorten_text( $url_object{title}, $max_title_length );
 			}
 			return ( 1, %url_object );
 		}
@@ -517,7 +516,9 @@ sub find_url {
 
 sub url_format_text {
 	my ( $format_success, %url_format_object ) = @_;
-
+	if ( $format_success != 1 || !defined $url_format_object{title} ) {
+		return 0;
+	}
 	my $cloudflare_text  = q();
 	my $max_title_length = 120;
 	if ( $url_format_object{is_cloudflare} == 1 ) {
@@ -565,109 +566,82 @@ sub url_format_text {
 	}
 }
 
-sub addressed {
+sub shorten_text {
+	my ( $long_text, $max_length ) = @_;
+	if ( !defined $max_length ) { $max_length = 250 }
+	my $short_text = substr $long_text, 0, $max_length;
+	if ( $long_text ne $short_text ) {
+		return $short_text . ' ...';
+	}
+	else {
+		return $long_text;
+	}
 
-		my $coin       = int rand 2;
-		my $coin_3     = int rand 3;
-		my $thing_said = $body;
-		$thing_said =~ s/^$bot_username\S?\s*//;
-		$thing_said =~ s/[?]//g;
+}
 
-		if ( $body =~ /\bor\b/ ) {
-			my $count_or;
-			my $word = 'or';
-			while ( $body =~ /\b$word\b/g ) {
-				++$count_or;
+sub bot_coin {
+	my $coin       = int rand 2;
+	my $coin_3     = int rand 3;
+	my $thing_said = $body;
+	$thing_said =~ s/^$bot_username\S?\s*//;
+	$thing_said =~ s/[?]//g;
+
+	if ( $body =~ /\bor\b/ ) {
+		my $count_or;
+		my $word = 'or';
+		while ( $body =~ /\b$word\b/g ) {
+			++$count_or;
+		}
+		print "There are $count_or instances of 'or'\n";
+		if ( $count_or > 2 ) {
+			print "%I don't support asking more than three things at once... yet\n";
+		}
+		elsif ( $count_or == 2 ) {
+			$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
+			print "One: $1 Two: $2 Three: $3\n";
+			if ( $coin_3 == 0 ) {
+				$thing_said = ucfirst $1;
+				print "%$thing_said\n";
 			}
-			print "There are $count_or instances of 'or'\n";
-			if ( $count_or > 2 ) {
-				print "%I don't support asking more than three things at once... yet\n";
+			elsif ( $coin_3 == 1 ) {
+				$thing_said = ucfirst $2;
+				print "%$thing_said\n";
 			}
-			elsif ( $count_or == 2 ) {
-				$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
-				print "One: $1 Two: $2 Three: $3\n";
-				if ( $coin_3 == 0 ) {
-					$thing_said = ucfirst $1;
-					print "%$thing_said\n";
-				}
-				elsif ( $coin_3 == 1 ) {
-					$thing_said = ucfirst $2;
-					print "%$thing_said\n";
-				}
-				elsif ( $coin_3 == 2 ) {
-					$thing_said = ucfirst $3;
-					print "%$thing_said\n";
-				}
-			}
-			else {
-				if ($coin) {
-					$thing_said =~ s/\s*\bor\b.*//;
-					$thing_said = ucfirst $thing_said;
-					print "%$thing_said\n";
-				}
-				else {
-					$thing_said =~ s/.*\bor\b\s*//;
-					$thing_said = ucfirst $thing_said;
-					print "%$thing_said\n";
-				}
+			elsif ( $coin_3 == 2 ) {
+				$thing_said = ucfirst $3;
+				print "%$thing_said\n";
 			}
 		}
 		else {
-			if   ($coin) { print "%Yes: $thing_said\n" }
-			else         { print "%No: $thing_said\n" }
-		}
-
-
-}
-
-# MAIN
-# .bots reporting functionality
-if ( $body =~ /[.]bots.*/ ) {
-	print "%$bot_username reporting in! [perl] $repo_url v$VERSION\n";
-}
-
-# Sed functionality. Only called if the history file is defined
-elsif ( $body =~ m{^s/.+/} and defined $history_file ) {
-	my ( $sed_who, $sed_text ) = sed_replace($body);
-	my $sed_short_text = substr $sed_text, 0, '250';
-	if ( $sed_text ne $sed_short_text ) {
-		$sed_text = $sed_short_text . ' ...';
-	}
-	if ( defined $sed_who and defined $sed_text ) {
-		print "sed_who: $sed_who sed_text: $sed_text\n";
-		print "%<$sed_who> $sed_text\n";
-	}
-}
-
-# The bot will say Yes or No if you address it with its name and use a question mark in the line.
-elsif ( $body =~ /$bot_username/ and $body =~ /[?]/ ) {
-	if ( $body =~ /[?]/ ) {
-		addressed;
-	}
-
-}
-
-elsif ( $body =~ /^!help/i ) {
-	print "%$help_text\n";
-}
-
-# Find and get URL's page title
-# Don't get the page header if there's a ## in front of it
-if ( $body !~ m{\#\#\s*http.?://} ) {
-	my ( $main_find_url_success, %main_url_object ) = find_url($body);
-
-	if ( $main_find_url_success != 0 and defined $main_url_object{title} ) {
-		my $main_url_formatted_text = url_format_text( $main_find_url_success, %main_url_object );
-		if ( defined $main_url_formatted_text ) {
-			print "%$main_url_formatted_text\n";
+			if ($coin) {
+				$thing_said =~ s/\s*\bor\b.*//;
+				$thing_said = ucfirst $thing_said;
+				print "%$thing_said\n";
+			}
+			else {
+				$thing_said =~ s/.*\bor\b\s*//;
+				$thing_said = ucfirst $thing_said;
+				print "%$thing_said\n";
+			}
 		}
 	}
-	elsif ( !defined $main_url_object{title} && $main_find_url_success == 1 ) {
-		print "No url title found right before channel message\n";
+	else {
+		if   ($coin) { print "%Yes: $thing_said\n" }
+		else         { print "%No: $thing_said\n" }
 	}
 }
 
-if ( defined $bot_username and $bot_username ne q() ) {
+sub addressed {
+
+}
+
+sub trunicate_history {
+	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
+		and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+	return;
+}
+
+sub username_defined_post {
 
 	if ( $body =~ /^!tell/ ) {
 		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
@@ -691,9 +665,56 @@ if ( defined $bot_username and $bot_username ne q() ) {
 	}
 
 	# Trunicate history file only if the bot's username is set.
-	`tail -n $history_file_length ./$history_file | sponge ./$history_file`
-		and print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+	trunicate_history;
+}
 
+# MAIN
+if ( defined $bot_username and $bot_username ne q() ) {
+	username_defined_pre;
+}
+
+# .bots reporting functionality
+if ( $body =~ /[.]bots.*/ ) {
+	print "%$bot_username reporting in! [perl] $repo_url v$VERSION\n";
+}
+
+# If the bot is addressed by name, call this function
+if ( $body =~ /$bot_username/ ) {
+	if ( $body =~ /[?]/ ) {
+		bot_coin;
+	}
+	else {
+		addressed;
+	}
+}
+
+# Sed functionality. Only called if the history file is defined
+elsif ( $body =~ m{^s/.+/} and defined $history_file ) {
+	my ( $sed_who, $sed_text ) = sed_replace($body);
+	$sed_text = shorten_text($sed_text);
+
+	if ( defined $sed_who and defined $sed_text ) {
+		print "sed_who: $sed_who sed_text: $sed_text\n";
+		print "%<$sed_who> $sed_text\n";
+	}
+}
+
+elsif ( $body =~ /^!help/i ) {
+	print "%$help_text\n";
+}
+
+# Find and get URL's page title
+my ( $url_format_return, $main_url_formatted_text ) = url_format_text( find_url($body) );
+if ( $url_format_return ) {
+	print "%$main_url_formatted_text\n";
+}
+
+else {
+	print "No url title or no success found right before channel message\n";
+}
+
+if ( defined $bot_username and $bot_username ne q() ) {
+	username_defined_post;
 }
 
 exit 0;

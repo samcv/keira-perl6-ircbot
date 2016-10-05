@@ -66,7 +66,6 @@ sub seen_nick {
 	my $nick = $seen_cmd;
 	$nick =~ s/^!seen (\S+).*/$1/;
 	my $event_file_exists = 0;
-	my @event_after_array;
 	my $is_in_file;
 	my $return_string;
 
@@ -75,7 +74,6 @@ sub seen_nick {
 	binmode $event_read_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
 	my @event_array = <$event_read_fh>;
-	my ( $event_who_update, $event_spoke_update, $event_join_update, $event_part_update );
 	my %event_data;
 	foreach my $line (@event_array) {
 		chomp $line;
@@ -101,7 +99,7 @@ sub seen_nick {
 			chansaid => ' Last spoke: '
 		);
 
-		# Sort by most recent event
+		# Sort by most recent event and add each formatted line to the return string.
 		foreach my $chan_event ( sort { $event_data{$b} <=> $event_data{$a} } keys %event_data ) {
 			if ( $event_data{$chan_event} != 0 ) {
 				$return_string
@@ -112,7 +110,7 @@ sub seen_nick {
 		}
 		print "%$return_string\n";
 	}
-
+	return;
 }
 
 sub convert_from_secs {
@@ -294,24 +292,21 @@ sub sed_replace {
 				if ( $history_said ne $temp_replaced_said ) {
 					$replaced_said = $temp_replaced_said;
 					$replaced_who  = $history_who;
-					print "set1\n";
 				}
 			}
 			else {
-				if ( $case_sensitivity == 0 ) {
-					$temp_replaced_said =~ s{\Q$before\E}{$after}g;
-					if ( $history_said ne $temp_replaced_said ) {
-						$replaced_said = $temp_replaced_said;
-						$replaced_who  = $history_who;
-						print "set2\n";
-					}
-				}
-				elsif ( $case_sensitivity == 1 ) {
+				if ($case_sensitivity) {
 					$temp_replaced_said =~ s{\Q$before\E}{$after}ig;
 					if ( $history_said ne $temp_replaced_said ) {
 						$replaced_said = $temp_replaced_said;
 						$replaced_who  = $history_who;
-						print "set3\n";
+					}
+				}
+				else {
+					$temp_replaced_said =~ s{\Q$before\E}{$after}g;
+					if ( $history_said ne $temp_replaced_said ) {
+						$replaced_said = $temp_replaced_said;
+						$replaced_who  = $history_who;
 					}
 				}
 			}
@@ -339,14 +334,15 @@ sub get_url_title {
 	my $line_no          = 1;
 	my $curl_retry_times = 1;
 	my $user_agent
-		= 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
+		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
 	my $curl_max_time = 5;
 	my @curl_args     = (
-		'--compressed', '-s',              '-A',         $user_agent,
+		'--compressed', '-s',              '-H',         $user_agent,
 		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
 		'--no-buffer',  '-i',              '--url',      $sub_url,
 	);
-
+	print join(' ', @curl_args);
+	print "\n";
 	# REGEX
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
@@ -432,8 +428,11 @@ sub get_url_title {
 		# Flatten the title array, putting two spaces between lines
 		$title = join q(  ), @curl_title;
 
-		# Detect the encoding of the title and decode it to UTF-8
-		$title = decode( "Detect", $title );
+		# Detect the encoding of the title with Encode::Detect module.
+		eval { $title = decode( "Detect", $title ); };
+
+		# If that fails fall back to using utf8::decode instead.
+		($EVAL_ERROR) && utf8::decode($title);
 
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
@@ -464,8 +463,8 @@ sub find_url {
 
 	foreach my $single_url (@find_url_array) {
 
-		# Make sure we don't include FTP
-		if ( $single_url !~ m{^ftp://} ) {
+		# Make sure we don't use FTP
+		if ( $single_url !~ m{^ftp://}i ) {
 			$find_url_url = $single_url;
 			print "Found $find_url_url as the first url\n";
 			last;
@@ -566,15 +565,69 @@ sub url_format_text {
 	}
 }
 
+sub addressed {
+
+		my $coin       = int rand 2;
+		my $coin_3     = int rand 3;
+		my $thing_said = $body;
+		$thing_said =~ s/^$bot_username\S?\s*//;
+		$thing_said =~ s/[?]//g;
+
+		if ( $body =~ /\bor\b/ ) {
+			my $count_or;
+			my $word = 'or';
+			while ( $body =~ /\b$word\b/g ) {
+				++$count_or;
+			}
+			print "There are $count_or instances of 'or'\n";
+			if ( $count_or > 2 ) {
+				print "%I don't support asking more than three things at once... yet\n";
+			}
+			elsif ( $count_or == 2 ) {
+				$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
+				print "One: $1 Two: $2 Three: $3\n";
+				if ( $coin_3 == 0 ) {
+					$thing_said = ucfirst $1;
+					print "%$thing_said\n";
+				}
+				elsif ( $coin_3 == 1 ) {
+					$thing_said = ucfirst $2;
+					print "%$thing_said\n";
+				}
+				elsif ( $coin_3 == 2 ) {
+					$thing_said = ucfirst $3;
+					print "%$thing_said\n";
+				}
+			}
+			else {
+				if ($coin) {
+					$thing_said =~ s/\s*\bor\b.*//;
+					$thing_said = ucfirst $thing_said;
+					print "%$thing_said\n";
+				}
+				else {
+					$thing_said =~ s/.*\bor\b\s*//;
+					$thing_said = ucfirst $thing_said;
+					print "%$thing_said\n";
+				}
+			}
+		}
+		else {
+			if   ($coin) { print "%Yes: $thing_said\n" }
+			else         { print "%No: $thing_said\n" }
+		}
+
+
+}
+
 # MAIN
 # .bots reporting functionality
 if ( $body =~ /[.]bots.*/ ) {
 	print "%$bot_username reporting in! [perl] $repo_url v$VERSION\n";
 }
 
-# Sed functionality. Only called if the bot's username is set and it can know what history file
-# to use.
-elsif ( $body =~ m{^s/.+/} and defined $bot_username ) {
+# Sed functionality. Only called if the history file is defined
+elsif ( $body =~ m{^s/.+/} and defined $history_file ) {
 	my ( $sed_who, $sed_text ) = sed_replace($body);
 	my $sed_short_text = substr $sed_text, 0, '250';
 	if ( $sed_text ne $sed_short_text ) {
@@ -586,39 +639,10 @@ elsif ( $body =~ m{^s/.+/} and defined $bot_username ) {
 	}
 }
 
-# The bot will say Yes or No if you address it with its name and there's a question mark in the
-# sentence.
+# The bot will say Yes or No if you address it with its name and use a question mark in the line.
 elsif ( $body =~ /$bot_username/ and $body =~ /[?]/ ) {
 	if ( $body =~ /[?]/ ) {
-		my $coin       = int rand 2;
-		my $coin_3     = int rand 3;
-		my $thing_said = $body;
-		$thing_said =~ s/^$bot_username\S?\s*//;
-		$thing_said =~ s/[?]//g;
-		if ( $body =~ /or/ ) {
-			my $count_or;
-			my $word = 'or';
-			while ( $body =~ /\b$word\b/g ) {
-				++$count_or;
-			}
-			print "There are $count_or words of or\n";
-			if ( $count_or > 2 ) {
-				print "%I don't support asking more than three things at once...yet\n";
-			}
-			elsif ( $count_or == 2 ) {
-				if    ( $coin_3 == 0 ) { print "%The first one: $thing_said\n" }
-				elsif ( $coin_3 == 1 ) { print "%The second one: $thing_said\n" }
-				elsif ( $coin_3 == 2 ) { print "%The third one: $thing_said\n" }
-			}
-			else {
-				if   ($coin) { print "%The first one: $thing_said\n" }
-				else         { print "%The second one: $thing_said\n" }
-			}
-		}
-		else {
-			if   ($coin) { print "%Yes: $thing_said\n" }
-			else         { print "%No: $thing_said\n" }
-		}
+		addressed;
 	}
 
 }

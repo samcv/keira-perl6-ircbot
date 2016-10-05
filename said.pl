@@ -58,6 +58,7 @@ sub username_defined_pre {
 	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
+	return;
 }
 
 sub seen_nick {
@@ -168,13 +169,13 @@ sub format_time {
 sub tell_nick {
 	my ($tell_nick_who) = @_;
 	my $tell_return;
-	open my $tell_fh, '<', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode $tell_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
-	my @tell_lines = <$tell_fh>;
-	close $tell_fh or print "Could not close $tell_file, Error $ERRNO\n";
-	open $tell_fh, '>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
-	binmode $tell_fh, ':encoding(UTF-8)'
+	open my $tell_read_fh, '<', "$tell_file" or print "Could not open $tell_file for read, Error $ERRNO\n";
+	binmode $tell_read_fh, ':encoding(UTF-8)'
+		or print 'Failed to set binmode on $tell_read_fh, Error' . "$ERRNO\n";
+	my @tell_lines = <$tell_read_fh>;
+	close $tell_read_fh or print "Could not close $tell_file, Error $ERRNO\n";
+	open my $tell_write_fh, '>', "$tell_file" or print "Could not open $tell_file for write, Error $ERRNO\n";
+	binmode $tell_write_fh, ':encoding(UTF-8)'
 		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my $has_been_said = 0;
 
@@ -196,10 +197,10 @@ sub tell_nick {
 			$has_been_said = 1;
 		}
 		else {
-			print {$tell_fh} "$tell_line\n";
+			print {$tell_write_fh} "$tell_line\n";
 		}
 	}
-	close $tell_fh or print 'Could not close $tell_fh' . ", Error $ERRNO\n";
+	close $tell_write_fh or print 'Could not close $tell_fh' . ", Error $ERRNO\n";
 	if ( defined $tell_return ) {
 		return $tell_return;
 	}
@@ -324,33 +325,19 @@ sub sed_replace {
 	}
 }
 
-sub get_url_title {
-	my ($sub_url) = @_;
-	print "Curl Location: \"$sub_url\"\n";
+sub process_curl {
+	my ($CURL_OUT) = @_;
 	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
 	my ( $title_start_line, $title_between_line, $title_end_line ) = (0) x 3;
-	my ( @curl_title, $new_location, $title );
-	my $line_no          = 1;
-	my $curl_retry_times = 1;
-	my $user_agent
-		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
-	my $curl_max_time = 5;
-	my @curl_args     = (
-		'--compressed', '-s',              '-H',         $user_agent,
-		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
-		'--no-buffer',  '-i',              '--url',      $sub_url,
-	);
-	print join( ' ', @curl_args );
-	print "\n";
+	my $new_location;
+	my $title;
+	my $line_no = 1;
 
 	# REGEX
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
-
-	# Don't set BINMODE on curl's output because we will decode later on
-	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
-		or print "Could not open curl pipe, Error $ERRNO\n";
+	my @curl_title;
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 
 		# Processing done only within the header
@@ -406,52 +393,77 @@ sub get_url_title {
 
 		$line_no++;
 	}
+	$title = join q(  ), @curl_title;
+
+	my %process_object = (
+		end_of_header    => $end_of_header,
+		title            => $title,
+		is_text          => $is_text,
+		is_text          => $is_text,
+		is_cloudflare    => $is_cloudflare,
+		has_cookie       => $has_cookie,
+		is_404           => $is_404,
+		title_start_line => $title_start_line,
+		title_end_line   => $title_end_line,
+		line_no          => $line_no,
+		new_location     => $new_location
+	);
+
+	return %process_object;
+}
+
+sub get_url_title {
+	my ($sub_url) = @_;
+	print "Curl Location: \"$sub_url\"\n";
+	my $curl_retry_times = 1;
+	my $user_agent
+		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
+	my $curl_max_time = 5;
+	my @curl_args     = (
+		'--compressed', '-s',              '-H',         $user_agent,
+		'--retry',      $curl_retry_times, '--max-time', $curl_max_time,
+		'--no-buffer',  '-i',              '--url',      $sub_url,
+	);
+
+	# Don't set BINMODE on curl's output because we will decode later on
+	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
+		or print "Could not open curl pipe, Error $ERRNO\n";
+
+	# Processing on the stream is done here
+	my %new_object = process_curl($CURL_OUT);
 	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
 
 	# Print out $is_text and $title's values
-	print "Ended on line $line_no  "
+	print "Ended on line $new_object{line_no}  "
 		. 'Is Text: '
-		. "$is_text  "
-		. 'Non-Blank Lines in Title: '
-		. scalar @curl_title . q(  )
+		. "$new_object{is_text}  "
 		. 'End of Header: '
-		. "$end_of_header\n";
-
-	if ( $curl_title[0] and ( !defined $new_location ) ) {
-		my $title_length = $title_end_line - $title_start_line;
+		. "$new_object{end_of_header}\n";
+	if ( $new_object{title} and ( !defined $new_object{new_location} ) ) {
+		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
 		print 'Title Start Line: '
-			. "$title_start_line  "
+			. "$new_object{title_start_line}  "
 			. 'Title End Line = '
-			. $title_end_line
+			. $new_object{title_end_line}
 			. " Lines from title start to end: $title_length\n";
 
-		# Flatten the title array, putting two spaces between lines
-		$title = join q(  ), @curl_title;
-
 		# Detect the encoding of the title with Encode::Detect module.
-		eval { $title = decode( "Detect", $title ); };
+		eval { $new_object{title} = decode( "Detect", $new_object{title} ); };
 
 		# If that fails fall back to using utf8::decode instead.
-		($EVAL_ERROR) && utf8::decode($title);
+		($EVAL_ERROR) && utf8::decode( $new_object{title} );
 
 		# Decode html entities such as &nbsp
-		$title = decode_entities($title);
+		$new_object{title} = decode_entities( $new_object{title} );
 
 		# Replace carriage returns with two spaces
-		$title =~ s/\r/  /g;
+		$new_object{title} =~ s/\r/  /g;
 
-		print "Title is: \"$title\"\n";
+		print "Title is: \"$new_object{title}\"\n";
 	}
-	my %object = (
-		url           => $sub_url,
-		title         => $title,
-		new_location  => $new_location,
-		is_text       => $is_text,
-		is_cloudflare => $is_cloudflare,
-		has_cookie    => $has_cookie,
-		is_404        => $is_404,
-	);
-	return %object;
+	$new_object{url} = $sub_url;
+
+	return %new_object;
 }
 
 sub find_url {
@@ -505,7 +517,7 @@ sub find_url {
 			return ( 1, %url_object );
 		}
 		else {
-			print "find_url return, it's not text\n";
+			print "find_url return, it's not text or no title found\n";
 			return 0;
 		}
 	}
@@ -633,6 +645,7 @@ sub bot_coin {
 
 sub addressed {
 
+	return;
 }
 
 sub trunicate_history {
@@ -666,6 +679,7 @@ sub username_defined_post {
 
 	# Trunicate history file only if the bot's username is set.
 	trunicate_history;
+	return;
 }
 
 # MAIN
@@ -705,7 +719,7 @@ elsif ( $body =~ /^!help/i ) {
 
 # Find and get URL's page title
 my ( $url_format_return, $main_url_formatted_text ) = url_format_text( find_url($body) );
-if ( $url_format_return ) {
+if ($url_format_return) {
 	print "%$main_url_formatted_text\n";
 }
 

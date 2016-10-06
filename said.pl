@@ -13,7 +13,7 @@ use Time::Seconds;
 use URL::Search 'extract_urls';
 use Text::Unidecode;
 
-binmode STDOUT, ':encoding(UTF-8)' or print "Failed to set binmode on STDOUT, Error $ERRNO\n";
+binmode STDOUT, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDOUT, Error $ERRNO\n";
 our $VERSION = 0.4;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my ( $who_said, $body, $bot_username ) = @ARGV;
@@ -31,8 +31,8 @@ my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell th
 my $said_time = time;
 
 if ( ( !defined $body ) or ( !defined $who_said ) ) {
-	print "Did not receive any input\n";
-	print "Usage: said.pl nickname \"text\" botname\n";
+	print {*STDERR} "Did not receive any input\n";
+	print {*STDERR} "Usage: said.pl nickname \"text\" botname\n";
 	exit 1;
 }
 else {
@@ -50,13 +50,13 @@ sub username_defined_pre {
 
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
-		or print "Could not open history file, Error $ERRNO\n";
+		or print {*STDERR} "Could not open history file, Error $ERRNO\n";
 	binmode $history_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
-	print {$history_fh} "<$who_said> $body\n"
-		or print "Failed to append to $history_file, Error $ERRNO\n";
-	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
+	print        {$history_fh} "<$who_said> $body\n"
+		or print {*STDERR} "Failed to append to $history_file, Error $ERRNO\n";
+	close $history_fh or print {*STDERR} "Could not close $history_file, Error $ERRNO\n";
 	return;
 }
 
@@ -69,11 +69,11 @@ sub seen_nick {
 	my $return_string;
 
 	open my $event_read_fh, '<', "$channel_event_file"
-		or print "Could not open seen file, Error $ERRNO\n";
+		or print {*STDERR} "Could not open seen file, Error $ERRNO\n";
 	binmode $event_read_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $event_read_fh, Error' . "$ERRNO\n";
 	my @event_array = <$event_read_fh>;
-	close $event_read_fh or print "Could not close seen file, Error $ERRNO\n";
+	close $event_read_fh or print {*STDERR} "Could not close seen file, Error $ERRNO\n";
 	my %event_data;
 	foreach my $line (@event_array) {
 		chomp $line;
@@ -168,22 +168,23 @@ sub process_tell_nick {
 	my ( $tell_write_fh, $tell_who_spoke, @tell_lines ) = @_;
 	my $has_been_said = 0;
 	my $tell_return;
-	my ( $time_told, $time_to_tell, $tell_who_to_tell, $tell_what_to_tell );
+	my ( $time_told, $time_to_tell, $who_told, $who_to_tell, $what_to_tell );
 	foreach my $tell_line (@tell_lines) {
 		chomp $tell_line;
 
-		if ( $tell_line =~ m/^(\d+) (\d+) <\S+?> >(\S+?)< (.*)/ ) {
-			$time_told         = $1;
-			$time_to_tell      = $2;
-			$tell_who_to_tell  = $3;
-			$tell_what_to_tell = $4;
+		if ( $tell_line =~ m/^(\d+) (\d+) <(\S+?)> >(\S+?)< (.*)/ ) {
+			$time_told    = $1;
+			$time_to_tell = $2;
+			$who_told     = $3;
+			$who_to_tell  = $4;
+			$what_to_tell = $5;
 		}
 
 		if (  !$has_been_said
 			&& $time_to_tell < $said_time
-			&& $tell_who_spoke =~ /$tell_who_to_tell/i )
+			&& $tell_who_spoke =~ /$who_to_tell/i )
 		{
-			$tell_return   = "<$tell_who_to_tell> >$tell_who_to_tell< $tell_what_to_tell " . format_time($time_told);
+			$tell_return   = "<$who_told> >$who_to_tell< $what_to_tell " . format_time($time_told);
 			$has_been_said = 1;
 		}
 		else {
@@ -201,20 +202,20 @@ sub tell_nick {
 
 	# Read
 	open my $tell_read_fh, '<', "$tell_file"
-		or print "Could not open $tell_file for read, Error $ERRNO\n";
+		or print {*STDERR} "Could not open $tell_file for read, Error $ERRNO\n";
 	binmode $tell_read_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $tell_read_fh, Error' . "$ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $tell_read_fh, Error' . "$ERRNO\n";
 	my @tell_lines = <$tell_read_fh>;
-	close $tell_read_fh or print "Could not close $tell_file, Error $ERRNO\n";
+	close $tell_read_fh or print {*STDERR} "Could not close $tell_file, Error $ERRNO\n";
 
 	# Write
 	open my $tell_write_fh, '>', "$tell_file"
-		or print "Could not open $tell_file for write, Error $ERRNO\n";
+		or print {*STDERR} "Could not open $tell_file for write, Error $ERRNO\n";
 	binmode $tell_write_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
 	my $tell_return = process_tell_nick( $tell_write_fh, $tell_who_spoke, @tell_lines );
 
-	close $tell_write_fh or print 'Could not close $tell_fh' . ", Error $ERRNO\n";
+	close $tell_write_fh or print {*STDERR} 'Could not close $tell_fh' . ", Error $ERRNO\n";
 	if ( defined $tell_return ) {
 		return $tell_return;
 	}
@@ -244,21 +245,21 @@ sub tell_nick_command {
 		$tell_text =~ s/!tell in \S+ \S+ (.*)/$1/;
 		$tell_who =~ s/!tell in \S+ (\S+) .*/$1/;
 
-		if ( $tell_remind_when =~ s/^(\d+)m$/$1/ ) {
-			$tell_remind_when = unidecode($tell_remind_when);
-			$tell_remind_time = $tell_remind_when * ONE_MINUTE + $said_time;
-		}
-		elsif ( $tell_remind_when =~ s/^(\d+)s$/$1/ ) {
+		if ( $tell_remind_when =~ s/^(\d+)s$/$1/ ) {
 			unidecode($tell_remind_when);
 			$tell_remind_time = $tell_remind_when + $said_time;
 		}
-		elsif ( $tell_remind_when =~ s/^(\d+)d$/$1/ ) {
+		elsif ( $tell_remind_when =~ s/^(\d+)m$/$1/ ) {
 			unidecode($tell_remind_when);
-			$tell_remind_time = $tell_remind_when * ONE_DAY + $said_time;
+			$tell_remind_time = $tell_remind_when * ONE_MINUTE + $said_time;
 		}
 		elsif ( $tell_remind_when =~ s/^(\d+)h$/$1/ ) {
 			unidecode($tell_remind_when);
 			$tell_remind_time = $tell_remind_when * ONE_HOUR + $said_time;
+		}
+		elsif ( $tell_remind_when =~ s/^(\d+)d$/$1/ ) {
+			unidecode($tell_remind_when);
+			$tell_remind_time = $tell_remind_when * ONE_DAY + $said_time;
 		}
 
 	}
@@ -266,16 +267,16 @@ sub tell_nick_command {
 		$tell_who =~ s/!tell (\S+) .*/$1/;
 		$tell_text =~ s/!tell \S+ (.*)/$1/;
 	}
-	print "tell_nick_time_called: $said_time tell_remind_time: $tell_remind_time "
+	print {*STDERR} "tell_nick_time_called: $said_time tell_remind_time: $tell_remind_time "
 		. "tell_who: $tell_who tell_text: $tell_text\n";
 
-	open my $tell_fh, '>>', "$tell_file" or print "Could not open $tell_file, Error $ERRNO\n";
+	open my $tell_fh, '>>', "$tell_file" or print {*STDERR} "Could not open $tell_file, Error $ERRNO\n";
 	binmode $tell_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
-	print {$tell_fh} "$said_time $tell_remind_time <$tell_who_spoke> >$tell_who< $tell_text\n"
-		or print "Failed to append to $tell_file, Error $ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $tell_fh, Error' . "$ERRNO\n";
+	print        {$tell_fh} "$said_time $tell_remind_time <$tell_who_spoke> >$tell_who< $tell_text\n"
+		or print {*STDERR} "Failed to append to $tell_file, Error $ERRNO\n";
 
-	close $tell_fh or print "Could not close $tell_file, Error $ERRNO\n";
+	close $tell_fh or print {*STDERR} "Could not close $tell_file, Error $ERRNO\n";
 	return;
 }
 
@@ -337,24 +338,24 @@ sub sed_replace {
 		$after =~ s{/$}{};
 	}
 
-	print "Before: $before\tAfter: $after\tRegex: $before_re \n";
+	print {*STDERR} "Before: $before\tAfter: $after\tRegex: $before_re \n";
 
-	open my $history_fh, '<', "$history_file" or print "Could not open $history_file for read\n";
+	open my $history_fh, '<', "$history_file" or print {*STDERR} "Could not open $history_file for read\n";
 	binmode $history_fh, ':encoding(UTF-8)'
-		or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
+		or print {*STDERR} 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 
 	my ( $replaced_who, $replaced_said ) = process_sed_replace( $history_fh, $before_re, $after, $global );
 
-	close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
+	close $history_fh or print {*STDERR} "Could not close $history_file, Error: $ERRNO\n";
 
 	if ( defined $replaced_said && defined $replaced_who ) {
-		print "replaced_said: $replaced_said replaced_who: $replaced_who\n";
+		print {*STDERR} "replaced_said: $replaced_said replaced_who: $replaced_who\n";
 		open my $history_fh, '>>', "$history_file"
-			or print "Could not open $history_file for write\n";
+			or print {*STDERR} "Could not open $history_file for write\n";
 		binmode $history_fh, ':encoding(UTF-8)'
-			or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
-		print {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
-		close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
+			or print {*STDERR} 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
+		print        {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
+		close $history_fh or print {*STDERR} "Could not close $history_file, Error: $ERRNO\n";
 		return $replaced_who, $replaced_said;
 	}
 }
@@ -381,7 +382,7 @@ sub process_curl {
 			if ( $curl_line =~ /^\s*$/ ) {
 				$end_of_header = 1;
 				if ( $is_text == 0 or defined $new_location ) {
-					print "Stopping because it's not text or a new location is defined\n";
+					print {*STDERR} "Stopping because it's not text or a new location is defined\n";
 					last;
 				}
 			}
@@ -415,7 +416,7 @@ sub process_curl {
 				$curl_line =~ s{$title_text_regex}{$1};
 				if ( $curl_line !~ /^\s*$/ ) {
 					push @curl_title, $curl_line;
-					print "Line $line_no is \"$curl_line\"\n";
+					print {*STDERR} "Line $line_no is \"$curl_line\"\n";
 				}
 			}
 
@@ -460,7 +461,7 @@ sub try_decode {
 
 sub get_url_title {
 	my ($sub_url) = @_;
-	print "Curl Location: \"$sub_url\"\n";
+	print {*STDERR} "Curl Location: \"$sub_url\"\n";
 	my $curl_retry_times = 1;
 	my $user_agent
 		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
@@ -472,21 +473,21 @@ sub get_url_title {
 
 	# Don't set BINMODE on curl's output because we will decode later on
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
-		or print "Could not open curl pipe, Error $ERRNO\n";
+		or print {*STDERR} "Could not open curl pipe, Error $ERRNO\n";
 
 	# Processing on the stream is done here
 	my %new_object = process_curl($CURL_OUT);
-	close $CURL_OUT or print "Could not close curl pipe, Error $ERRNO\n";
+	close $CURL_OUT or print {*STDERR} "Could not close curl pipe, Error $ERRNO\n";
 
 	# Print out $is_text and $title's values
-	print "Ended on line $new_object{line_no}  "
+	print {*STDERR} "Ended on line $new_object{line_no}  "
 		. 'Is Text: '
 		. "$new_object{is_text}  "
 		. 'End of Header: '
 		. "$new_object{end_of_header}\n";
 	if ( $new_object{title} and ( !defined $new_object{new_location} ) ) {
 		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
-		print 'Title Start Line: '
+		print {*STDERR} 'Title Start Line: '
 			. "$new_object{title_start_line}  "
 			. 'Title End Line = '
 			. $new_object{title_end_line}
@@ -500,7 +501,7 @@ sub get_url_title {
 		# Replace carriage returns with two spaces
 		$new_object{title} =~ s/\r/  /g;
 
-		print "Title is: \"$new_object{title}\"\n";
+		print {*STDERR} "Title is: \"$new_object{title}\"\n";
 	}
 	$new_object{url} = $sub_url;
 
@@ -521,7 +522,7 @@ sub find_url {
 		# Make sure we don't use FTP
 		if ( $single_url !~ m{^ftp://}i ) {
 			$find_url_url = $single_url;
-			print "Found $find_url_url as the first url\n";
+			print {*STDERR} "Found $find_url_url as the first url\n";
 			last;
 		}
 	}
@@ -529,12 +530,12 @@ sub find_url {
 	if ( defined $find_url_url ) {
 
 		if ( $find_url_url =~ m/;/ ) {
-			print "URL has comma(s) in it!\n";
+			print {*STDERR} "URL has comma(s) in it!\n";
 			$find_url_url =~ s/;/%3B/xmsg;
 			return 0;
 		}
 		elsif ( $find_url_url =~ m/\$/ ) {
-			print "\$ sign found\n";
+			print {*STDERR} "\$ sign found\n";
 			return 0;
 		}
 		my $url_new_location;
@@ -558,7 +559,7 @@ sub find_url {
 			return ( 1, %url_object );
 		}
 		else {
-			print "find_url return, it's not text or no title found\n";
+			print {*STDERR} "find_url return, it's not text or no title found\n";
 			return 0;
 		}
 	}
@@ -586,7 +587,7 @@ sub url_format_text {
 		$cookie_text = q();
 	}
 	if ( $url_format_object{is_404} ) {
-		print "find_url return, 404 error\n";
+		print {*STDERR} "find_url return, 404 error\n";
 		return 0;
 	}
 	if ( $url_format_object{is_text} ) {
@@ -597,7 +598,7 @@ sub url_format_text {
 			$url_format_object{title} = $short_title . ' ...';
 		}
 		if ( !$url_format_object{title} ) {
-			print "find_url return, No title found right before print\n";
+			print {*STDERR} "find_url return, No title found right before print\n";
 			return 0;
 		}
 
@@ -608,11 +609,9 @@ sub url_format_text {
 		else {
 			$new_location_text = q();
 		}
-		return 1, "[ $url_format_object{title} ]" . $new_location_text . $cloudflare_text . $cookie_text;
+		print q(%) . "[ $url_format_object{title} ]" . $new_location_text . $cloudflare_text . $cookie_text;
 	}
-	else {
-		return 0;
-	}
+	return;
 }
 
 sub shorten_text {
@@ -661,13 +660,13 @@ sub bot_coin {
 		while ( $coin_said =~ /\b$word\b/g ) {
 			++$count_or;
 		}
-		print "There are $count_or instances of 'or'\n";
+		print {*STDERR} "There are $count_or instances of 'or'\n";
 		if ( $count_or > 2 ) {
 			print "%I don't support asking more than three things at once... yet\n";
 		}
 		elsif ( $count_or == 2 ) {
 			$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
-			print "One: $1 Two: $2 Three: $3\n";
+			print {*STDERR} "One: $1 Two: $2 Three: $3\n";
 			if ( $coin_3 == 0 ) {
 				$thing_said = rephrase($1);
 				print "%$thing_said\n";
@@ -709,7 +708,7 @@ sub addressed {
 
 sub trunicate_history {
 	system "tail -n $history_file_length ./$history_file | sponge ./$history_file"
-		or print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+		or print {*STDERR} "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
 	return;
 }
 
@@ -723,15 +722,14 @@ sub username_defined_post {
 			print "%$tell_in_help_text\n";
 		}
 		else {
-			#print time . "Calling tell_nick_command\n";
 			tell_nick_command( $body, $who_said );
 		}
 	}
 	if ( -f $tell_file ) {
-		print localtime(time) . "\tCalling tell_nick\n";
+		print {*STDERR} localtime(time) . "\tCalling tell_nick\n";
 		my ($tell_to_say) = tell_nick($who_said);
 		if ( defined $tell_to_say ) {
-			print "Tell to say line next\n";
+			print {*STDERR} "Tell to say line next\n";
 			print "%$tell_to_say\n";
 		}
 	}
@@ -768,7 +766,7 @@ elsif ( $body =~ m{^s/.+/}i and defined $history_file ) {
 	$sed_text = shorten_text($sed_text);
 
 	if ( defined $sed_who and defined $sed_text ) {
-		print "sed_who: $sed_who sed_text: $sed_text\n";
+		print {*STDERR} "sed_who: $sed_who sed_text: $sed_text\n";
 		print "%<$sed_who> $sed_text\n";
 	}
 }
@@ -781,14 +779,7 @@ elsif ( $body =~ /^!help/i ) {
 }
 
 # Find and get URL's page title
-my ( $url_format_return, $main_url_formatted_text ) = url_format_text( find_url($body) );
-if ($url_format_return) {
-	print "%$main_url_formatted_text\n";
-}
-
-else {
-	print "No url title or no success found right before channel message\n";
-}
+url_format_text( find_url($body) );
 
 if ( defined $bot_username and $bot_username ne q() ) {
 	username_defined_post;

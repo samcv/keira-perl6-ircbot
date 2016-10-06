@@ -17,11 +17,12 @@ use Encode 'decode_utf8';
 # 	perl curl moreutils
 # Debian perl package list:
 # 	libpoe-component-sslify-perl libbot-basicbot-perl libencode-detect-perl
+#	libtext-unidecode-perl
 
 # Arch package list:
 # 	perl curl moreutils
 # Arch AUR package list:
-# 	perl-bot-basicbot perl-encode-detect
+# 	perl-bot-basicbot perl-encode-detect perl-text-unidecode
 
 binmode( STDOUT, ':encoding(UTF-8)' ) or die "Failed to set binmode on STDOUT, Error $?\n";
 
@@ -29,9 +30,7 @@ my ( $bot_username, $real_name, $server_address, $server_port, $server_channels 
 
 for ( $bot_username, $real_name, $server_address, $server_port, $server_channels ) {
 	if ( !defined ) {
-		print
-			'Usage: perlbot.pl "username" "real name" "server address" "server port" "server channel"'
-			. "\n";
+		print 'Usage: perlbot.pl "username" "real name" "server address" "server port" "server channel"' . "\n";
 		exit 1;
 	}
 }
@@ -58,8 +57,8 @@ sub said {
 	utf8::encode($bot_username);
 	utf8::encode($addressed);
 
-	# If we are being addressed BasicBot will strip the bots name from the message.
-	# Here we add it back.
+	# If we are being addressed BasicBot will strip the bots name from the message
+	# Here we add it back add the bots username back onto into the body
 	if ( $addressed eq $bot_username ) {
 		$body = $addressed . ": $body";
 	}
@@ -112,8 +111,7 @@ sub userquit {
 	my $chanpart_nick    = $message->{who};
 	my $event            = 'chanpart';
 
-	push my (@userquit_args), 'channel_event.pl', $chanpart_nick, $server_channels, $event,
-		$bot_username;
+	push my (@userquit_args), 'channel_event.pl', $chanpart_nick, $server_channels, $event, $bot_username;
 	open my $USERQUIT_OUT, '-|', 'perl', @userquit_args
 		or print 'Cannot open $USERQUIT_OUT ' . "pipe, Error $?\n";
 
@@ -141,8 +139,7 @@ sub chanjoin {
 	my $chanjoin_nick    = $message->{who};
 	my $event            = 'chanjoin';
 
-	push my (@chanjoin_args), 'channel_event.pl', $chanjoin_nick, $chanjoin_channel, $event,
-		$bot_username;
+	push my (@chanjoin_args), 'channel_event.pl', $chanjoin_nick, $chanjoin_channel, $event, $bot_username;
 	open my $CHANJOIN_OUT, '-|', 'perl', @chanjoin_args
 		or print 'Cannot open $CHANJOIN_OUT ' . "pipe, Error $?\n";
 
@@ -170,8 +167,7 @@ sub chanpart {
 	my $chanpart_nick    = $message->{who};
 	my $event            = 'chanpart';
 
-	push my (@chanjoin_args), 'channel_event.pl', $chanpart_nick, $chanpart_channel, $event,
-		$bot_username;
+	push my (@chanjoin_args), 'channel_event.pl', $chanpart_nick, $chanpart_channel, $event, $bot_username;
 	open my $CHANPART_OUT, '-|', 'perl', @chanjoin_args
 		or print 'Cannot open $CHANPART_OUT ' . "pipe, Error $?\n";
 

@@ -26,7 +26,7 @@ my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots wit
 my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
-my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname \"message to tell them\"';
+my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell them"';
 
 my $said_time = time;
 
@@ -104,11 +104,11 @@ sub seen_nick {
 		my %text_strings = (
 			chanjoin => ' Last joined: ',
 			chanpart => ' Last parted/quit: ',
-			chansaid => ' Last spoke: '
+			chansaid => ' Last spoke: ',
 		);
 
 		# Sort by most recent event and add each formatted line to the return string.
-		foreach my $chan_event ( sort { $event_data{$b} <=> $event_data{$a} } keys %event_data ) {
+		foreach my $chan_event ( reverse sort { $event_data{$a} <=> $event_data{$b} } keys %event_data ) {
 			if ( $event_data{$chan_event} != 0 ) {
 				$return_string = $return_string . $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
 			}
@@ -185,7 +185,8 @@ sub process_tell_nick {
 			$tell_what_to_tell = $4;
 		}
 
-		if (   !$has_been_said && $time_to_tell < $said_time
+		if (  !$has_been_said
+			&& $time_to_tell < $said_time
 			&& $tell_who_spoke =~ /$tell_who_to_tell/i )
 		{
 			$tell_return   = "<$tell_who_to_tell> >$tell_who_to_tell< $tell_what_to_tell " . format_time($time_told);
@@ -356,7 +357,7 @@ sub sed_replace {
 		print "replaced_said: $replaced_said replaced_who: $replaced_who\n";
 		open my $history_fh, '>>', "$history_file"
 			or print "Could not open $history_file for write\n";
-		binmode( $history_fh, ':encoding(UTF-8)' )
+		binmode $history_fh, ':encoding(UTF-8)'
 			or print 'Failed to set binmode on $history_fh, Error' . "$ERRNO\n";
 		print {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
 		close $history_fh or print "Could not close $history_file, Error: $ERRNO\n";
@@ -445,7 +446,7 @@ sub process_curl {
 		title_start_line => $title_start_line,
 		title_end_line   => $title_end_line,
 		line_no          => $line_no,
-		new_location     => $new_location
+		new_location     => $new_location,
 	);
 
 	return %process_object;
@@ -455,10 +456,10 @@ sub try_decode {
 	my ($string) = @_;
 
 	# Detect the encoding of the title with Encode::Detect module.
-	eval { $string = decode( "Detect", $string ); };
-
 	# If that fails fall back to using utf8::decode instead.
-	($EVAL_ERROR) && utf8::decode($string);
+	if ( !eval { $string = decode( 'Detect', $string ); 1 } ) {
+		utf8::decode($string);
+	}
 
 	return $string;
 }
@@ -713,7 +714,7 @@ sub addressed {
 }
 
 sub trunicate_history {
-	system("tail -n $history_file_length ./$history_file | sponge ./$history_file")
+	system "tail -n $history_file_length ./$history_file | sponge ./$history_file"
 		or print "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
 	return;
 }

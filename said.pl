@@ -48,7 +48,6 @@ sub username_defined_pre {
 	$history_file_length = 20;
 	utf8::decode($bot_username);
 
-
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
 		or print "Could not open history file, Error $ERRNO\n";
@@ -58,11 +57,6 @@ sub username_defined_pre {
 	print {$history_fh} "<$who_said> $body\n"
 		or print "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print "Could not close $history_file, Error $ERRNO\n";
-	return;
-}
-
-sub process_seen {
-	my ($fh) = @_;
 	return;
 }
 

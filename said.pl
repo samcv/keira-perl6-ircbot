@@ -112,6 +112,18 @@ sub seen_nick {
 	return;
 }
 
+sub try_decode {
+	my ($string) = @_;
+
+	# Detect the encoding of the title with Encode::Detect module.
+	# If that fails fall back to using utf8::decode instead.
+	if ( !eval { $string = decode( 'Detect', $string ); 1 } ) {
+		utf8::decode($string);
+	}
+
+	return $string;
+}
+
 sub convert_from_secs {
 	my ($secs_to_convert) = @_;
 	use integer;
@@ -447,18 +459,6 @@ sub process_curl {
 	return %process_object;
 }
 
-sub try_decode {
-	my ($string) = @_;
-
-	# Detect the encoding of the title with Encode::Detect module.
-	# If that fails fall back to using utf8::decode instead.
-	if ( !eval { $string = decode( 'Detect', $string ); 1 } ) {
-		utf8::decode($string);
-	}
-
-	return $string;
-}
-
 sub get_url_title {
 	my ($sub_url) = @_;
 	print {*STDERR} "Curl Location: \"$sub_url\"\n";
@@ -707,8 +707,9 @@ sub addressed {
 }
 
 sub trunicate_history {
-	system "tail -n $history_file_length ./$history_file | sponge ./$history_file"
-		or print {*STDERR} "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+	system "tail -n $history_file_length $history_file | sponge $history_file"
+		and print {*STDERR} "Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO\n";
+
 	return;
 }
 
@@ -735,7 +736,9 @@ sub username_defined_post {
 	}
 
 	# Trunicate history file only if the bot's username is set.
-	trunicate_history;
+	if ( -f $history_file ) {
+		trunicate_history;
+	}
 	return;
 }
 

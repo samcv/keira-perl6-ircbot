@@ -24,7 +24,7 @@ use Encode 'decode_utf8';
 # Arch AUR package list:
 # 	perl-bot-basicbot perl-encode-detect perl-text-unidecode
 
-binmode( STDOUT, ':encoding(UTF-8)' ) or die "Failed to set binmode on STDOUT, Error $?\n";
+binmode( STDOUT, ':encoding(UTF-8)' ) or print {*STDERR} "Failed to set binmode on STDOUT, Error $?\n";
 
 my ( $bot_username, $real_name, $server_address, $server_port, $server_channels ) = @ARGV;
 
@@ -41,6 +41,21 @@ my $alt_nickname_2 = $bot_username . q(_);
 
 my $history_file = $bot_username . '_history.txt';
 
+sub process_children {
+	my ( $self, $fh ) = @_;
+	while ( defined( my $line = <$fh> ) ) {
+		print {*STDERR} $line;
+		if ( $line =~ s/^%// ) {
+			$self->say(
+				{   channel => ( $self->channels ),
+					body    => $line,
+				}
+			);
+		}
+
+	}
+}
+
 sub said {
 	my ( $self, $message ) = @_;
 	my $body      = $message->{body};
@@ -55,12 +70,14 @@ sub said {
 	utf8::encode($body);
 	utf8::encode($channel);
 	utf8::encode($bot_username);
-	utf8::encode($addressed);
+	if ( defined $addressed ) {
+		utf8::encode($addressed);
 
-	# If we are being addressed BasicBot will strip the bots name from the message
-	# Here we add it back add the bots username back onto into the body
-	if ( $addressed eq $bot_username ) {
-		$body = $addressed . ": $body";
+		# If we are being addressed BasicBot will strip the bots name from the message
+		# Here we add it back add the bots username back onto into the body
+		if ( $addressed eq $bot_username ) {
+			$body = $addressed . ": $body";
+		}
 	}
 
 	push my (@said_args), 'said.pl', $who_said, $body, $bot_username;
@@ -69,37 +86,19 @@ sub said {
 
 	binmode( $SAID_OUT, ":encoding(UTF-8)" )
 		or print 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
-	print "SAIDOUT\n";
-	while ( defined( my $line = <$SAID_OUT> ) ) {
-		print $line;
-		if ( $line =~ s/^%// ) {
-			$self->say(
-				{   channel => ( $self->channels ),
-					body    => $line,
-				}
-			);
-		}
 
-	}
+	process_children( $self, $SAID_OUT );
+
 	close $SAID_OUT;
 	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event, $bot_username;
 	open my $CHANSAID_OUT, '-|', 'perl', @chansaid_args
 		or print 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
 
 	binmode( $CHANSAID_OUT, ":encoding(UTF-8)" )
-		or print 'Failed to set binmode on $CHANSAID_OUT, Error ' . "$?\n";
+		or print {*STDERR} 'Failed to set binmode on $CHANSAID_OUT, Error ' . "$?\n";
 
-	while ( defined( my $line = <$CHANSAID_OUT> ) ) {
-		print $line;
-		if ( $line =~ s/^%// ) {
-			$self->say(
-				{   channel => ( $self->channels ),
-					body    => $line,
-				}
-			);
-		}
+	process_children( $self, $CHANSAID_OUT );
 
-	}
 	close $CHANSAID_OUT;
 	return;
 
@@ -118,17 +117,8 @@ sub userquit {
 	binmode( $USERQUIT_OUT, ":encoding(UTF-8)" )
 		or print 'Failed to set binmode on $USERQUIT_OUT, Error ' . "$?\n";
 
-	while ( defined( my $line = <$USERQUIT_OUT> ) ) {
-		print $line;
-		if ( $line =~ s/^%// ) {
-			$self->say(
-				{   channel => ( $self->channels ),
-					body    => $line,
-				}
-			);
-		}
+	process_children( $self, $USERQUIT_OUT );
 
-	}
 	close $USERQUIT_OUT;
 	return;
 }
@@ -141,23 +131,14 @@ sub chanjoin {
 
 	push my (@chanjoin_args), 'channel_event.pl', $chanjoin_nick, $chanjoin_channel, $event, $bot_username;
 	open my $CHANJOIN_OUT, '-|', 'perl', @chanjoin_args
-		or print 'Cannot open $CHANJOIN_OUT ' . "pipe, Error $?\n";
+		or print {*STDERR} 'Cannot open $CHANJOIN_OUT ' . "pipe, Error $?\n";
 
 	binmode( $CHANJOIN_OUT, ":encoding(UTF-8)" )
-		or print 'Failed to set binmode on $CHANJOIN_OUT, Error ' . "$?\n";
+		or print {*STDERR} 'Failed to set binmode on $CHANJOIN_OUT, Error ' . "$?\n";
 
-	while ( defined( my $line = <$CHANJOIN_OUT> ) ) {
-		print $line;
-		if ( $line =~ s/^%// ) {
-			$self->say(
-				{   channel => ( $self->channels ),
-					body    => $line,
-				}
-			);
-		}
+	process_children( $self, $CHANJOIN_OUT );
 
-	}
-	close $CHANJOIN_OUT;
+	close $CHANJOIN_OUT or print {*STDERR} 'Cannot close $CHANJOIN_OUT ' . "pipe, Error $?\n";
 	return;
 }
 
@@ -169,23 +150,14 @@ sub chanpart {
 
 	push my (@chanjoin_args), 'channel_event.pl', $chanpart_nick, $chanpart_channel, $event, $bot_username;
 	open my $CHANPART_OUT, '-|', 'perl', @chanjoin_args
-		or print 'Cannot open $CHANPART_OUT ' . "pipe, Error $?\n";
+		or print {*STDERR} 'Cannot open $CHANPART_OUT ' . "pipe, Error $?\n";
 
 	binmode( $CHANPART_OUT, ":encoding(UTF-8)" )
-		or print 'Failed to set binmode on $CHANPART_OUT, Error ' . "$?\n";
+		or print {*STDERR} 'Failed to set binmode on $CHANPART_OUT, Error ' . "$?\n";
 
-	while ( defined( my $line = <$CHANPART_OUT> ) ) {
-		print $line;
-		if ( $line =~ s/^%// ) {
-			$self->say(
-				{   channel => ( $self->channels ),
-					body    => $line,
-				}
-			);
-		}
+	process_children( $self, $CHANPART_OUT );
 
-	}
-	close $CHANPART_OUT;
+	close $CHANPART_OUT or print {*STDERR} 'Cannot close $CHANPART_OUT ' . "pipe, Error $?\n";
 	return;
 }
 

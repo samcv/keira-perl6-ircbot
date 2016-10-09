@@ -24,7 +24,9 @@ use Encode 'decode_utf8';
 # Arch AUR package list:
 # 	perl-bot-basicbot perl-encode-detect perl-text-unidecode
 
-binmode( STDOUT, ':encoding(UTF-8)' ) or print {*STDERR} "Failed to set binmode on STDOUT, Error $?\n";
+binmode STDOUT, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDOUT, Error $?\n";
+binmode STDERR, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDERR, Error $?\n";
+
 
 my ( $bot_username, $real_name, $server_address, $server_port, $server_channels ) = @ARGV;
 
@@ -79,17 +81,6 @@ sub said {
 			$body = $addressed . ": $body";
 		}
 	}
-
-	push my (@said_args), 'said.pl', $who_said, $body, $bot_username;
-	open my $SAID_OUT, '-|', "perl", @said_args
-		or print 'Cannot open $SAID_OUT ' . "pipe, Error $?\n";
-
-	binmode( $SAID_OUT, ":encoding(UTF-8)" )
-		or print 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
-
-	process_children( $self, $SAID_OUT );
-
-	close $SAID_OUT;
 	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event, $bot_username;
 	open my $CHANSAID_OUT, '-|', 'perl', @chansaid_args
 		or print 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
@@ -100,6 +91,18 @@ sub said {
 	process_children( $self, $CHANSAID_OUT );
 
 	close $CHANSAID_OUT;
+
+	push my (@said_args), 'said.pl', $who_said, $body, $bot_username;
+	open my $SAID_OUT, '-|', "perl", @said_args
+		or print 'Cannot open $SAID_OUT ' . "pipe, Error $?\n";
+
+	binmode $SAID_OUT, ':encoding(UTF-8)'
+		or print 'Failed to set binmode on $SAID_OUT, Error ' . "$?\n";
+
+	process_children( $self, $SAID_OUT );
+
+	close $SAID_OUT;
+
 	return;
 
 }
@@ -114,8 +117,8 @@ sub userquit {
 	open my $USERQUIT_OUT, '-|', 'perl', @userquit_args
 		or print 'Cannot open $USERQUIT_OUT ' . "pipe, Error $?\n";
 
-	binmode( $USERQUIT_OUT, ":encoding(UTF-8)" )
-		or print 'Failed to set binmode on $USERQUIT_OUT, Error ' . "$?\n";
+	binmode $USERQUIT_OUT, ':encoding(UTF-8)'
+		or print "Failed to set binmode on USERQUIT_OUT, Error $?\n";
 
 	process_children( $self, $USERQUIT_OUT );
 
@@ -133,7 +136,7 @@ sub chanjoin {
 	open my $CHANJOIN_OUT, '-|', 'perl', @chanjoin_args
 		or print {*STDERR} 'Cannot open $CHANJOIN_OUT ' . "pipe, Error $?\n";
 
-	binmode( $CHANJOIN_OUT, ":encoding(UTF-8)" )
+	binmode $CHANJOIN_OUT, ':encoding(UTF-8)'
 		or print {*STDERR} 'Failed to set binmode on $CHANJOIN_OUT, Error ' . "$?\n";
 
 	process_children( $self, $CHANJOIN_OUT );
@@ -152,7 +155,7 @@ sub chanpart {
 	open my $CHANPART_OUT, '-|', 'perl', @chanjoin_args
 		or print {*STDERR} 'Cannot open $CHANPART_OUT ' . "pipe, Error $?\n";
 
-	binmode( $CHANPART_OUT, ":encoding(UTF-8)" )
+	binmode $CHANPART_OUT, ':encoding(UTF-8)'
 		or print {*STDERR} 'Failed to set binmode on $CHANPART_OUT, Error ' . "$?\n";
 
 	process_children( $self, $CHANPART_OUT );
@@ -163,14 +166,14 @@ sub chanpart {
 
 ### actual bot ###
 PerlBot->new(
-	server   => "$server_address",
-	port     => "$server_port",
-	channels => ["$server_channels"],
-
-	nick      => "$nickname",
-	alt_nicks => [ "$alt_nickname_1", "$alt_nickname_2" ],
-	username  => "$bot_username",
-	name      => "$real_name",
-	ssl       => 1,
-	flood     => 1
+	server     => "$server_address",
+	port       => "$server_port",
+	channels   => ["$server_channels"],
+	msg_length => 1000,
+	nick       => "$nickname",
+	alt_nicks  => [ "$alt_nickname_1", "$alt_nickname_2" ],
+	username   => "$bot_username",
+	name       => "$real_name",
+	ssl        => 1,
+	flood      => 1
 )->run();    # Start the bot

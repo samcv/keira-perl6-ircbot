@@ -5,6 +5,7 @@ use warnings;
 use HTML::Entities 'decode_entities';
 use IPC::Open3 'open3';
 use Encode;
+use Symbol 'gensym';
 use Encode::Detect;
 use feature 'unicode_strings';
 use utf8;
@@ -13,6 +14,7 @@ use Time::Seconds;
 use URL::Search 'extract_urls';
 use Text::Unidecode;
 use Convert::EastAsianWidth;
+use WebService::UrbanDictionary;
 
 binmode STDOUT, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDOUT, Error $ERRNO\n";
 binmode STDERR, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDERR, Error $ERRNO\n";
@@ -122,6 +124,18 @@ sub from_hex {
 		$hex_string .= hex($decimal) . $SPACE;
 	}
 	print q(%) . $hex_string . "\n";
+	return;
+}
+
+sub to_hex {
+	my ( $to_hex_who, $to_hex_said ) = @_;
+	my @hexes = split $SPACE, $to_hex_said;
+	my $dec_string;
+	foreach my $hex (@hexes) {
+		$dec_string .= sprintf '%x ', $hex;
+	}
+	$dec_string = uc $dec_string;
+	print q(%) . $dec_string . "\n";
 	return;
 }
 
@@ -237,7 +251,7 @@ sub format_time {
 	if ( defined $tell_secs ) {
 		$tell_return .= $tell_secs . 's ';
 	}
-	$tell_return = $tell_return . 'ago]';
+	$tell_return .= 'ago]';
 	return $tell_return;
 }
 
@@ -303,7 +317,6 @@ sub tell_nick {
 
 sub transliterate {
 	my ( $transliterate_who, $transliterate_said ) = @_;
-	$transliterate_said =~ s/^!transliterate\s*//;
 	my $transliterate_return = unidecode($transliterate_said);
 	print "%$transliterate_return\n";
 	return;
@@ -439,11 +452,18 @@ sub sed_replace {
 
 sub process_curl {
 	my ($CURL_OUT) = @_;
-	my ( $is_text, $end_of_header, $is_404, $has_cookie, $is_cloudflare ) = (0) x 5;
-	my ( $title_start_line, $title_between_line, $title_end_line ) = (0) x 3;
-	my $new_location;
-	my $title;
-	my $line_no = 1;
+
+	my %process = (
+		end_of_header      => 0,
+		is_text            => 0,
+		is_cloudflare      => 0,
+		has_cookie         => 0,
+		is_404             => 0,
+		title_start_line   => 0,
+		title_end_line     => 0,
+		title_between_line => 0,
+		line_no            => 1,
+	);
 
 	# REGEX
 	my $title_text_regex  = '\s*(.*\S+)\s*';
@@ -453,22 +473,22 @@ sub process_curl {
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 
 		# Processing done only within the header
-		if ( $end_of_header == 0 ) {
+		if ( $process{end_of_header} == 0 ) {
 
 			# Detect end of header
 			if ( $curl_line =~ /^\s*$/ ) {
-				$end_of_header = 1;
-				if ( $is_text == 0 or defined $new_location ) {
+				$process{end_of_header} = 1;
+				if ( $process{is_text} == 0 or defined $process{new_location} ) {
 					print {*STDERR} "Stopping because it's not text or a new location is defined\n";
 					last;
 				}
 			}
 
 			# Detect content type
-			elsif ( $curl_line =~ /^Content-Type:.*text/i )       { $is_text       = 1 }
-			elsif ( $curl_line =~ /^CF-RAY:/i )                   { $is_cloudflare = 1 }
-			elsif ( $curl_line =~ /^Set-Cookie.*/i )              { $has_cookie++ }
-			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) { $new_location  = $curl_line }
+			elsif ( $curl_line =~ /^Content-Type:.*text/i )       { $process{is_text}       = 1 }
+			elsif ( $curl_line =~ /^CF-RAY:/i )                   { $process{is_cloudflare} = 1 }
+			elsif ( $curl_line =~ /^Set-Cookie.*/i )              { $process{has_cookie}++ }
+			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) { $process{new_location}  = $curl_line }
 		}
 
 		# Processing done after the header
@@ -476,52 +496,41 @@ sub process_curl {
 
 			# Find the <title> element
 			if ( $curl_line =~ s{$title_start_regex}{}i ) {
-				$title_start_line = $line_no;
+				$process{title_start_line} = $process{line_no};
 			}
 
 			# Find the </title> element
 			if ( $curl_line =~ s{$title_end_regex}{}i ) {
-				$title_end_line = $line_no;
+				$process{title_end_line} = $process{line_no};
 			}
 
 			# If we are between <title> and </title>
-			elsif ( $title_start_line != 0 && $title_end_line == 0 ) {
-				$title_between_line = $line_no;
+			elsif ( $process{title_start_line} != 0 && $process{title_end_line} == 0 ) {
+				$process{title_between_line} = $process{line_no};
 			}
 
-			if ( $title_start_line or $title_end_line or $title_between_line == $line_no ) {
+			if (   $process{title_start_line}
+				or $process{title_end_line}
+				or $process{title_between_line} == $process{line_no} )
+			{
 				$curl_line =~ s{$title_text_regex}{$1};
 				if ( $curl_line !~ /^\s*$/ ) {
 					push @curl_title, $curl_line;
-					print {*STDERR} "Line $line_no is \"$curl_line\"\n";
+					print {*STDERR} "Line $process{line_no} is \"$curl_line\"\n";
 				}
 			}
 
 			# If we reach the </head>, <body> have reached the end of title
-			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} or $title_end_line != 0 ) {
+			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} or $process{title_end_line} != 0 ) {
 				last;
 			}
 		}
 
-		$line_no++;
+		$process{line_no}++;
 	}
-	$title = join q(  ), @curl_title;
-
-	my %process_object = (
-		end_of_header    => $end_of_header,
-		title            => $title,
-		is_text          => $is_text,
-		is_text          => $is_text,
-		is_cloudflare    => $is_cloudflare,
-		has_cookie       => $has_cookie,
-		is_404           => $is_404,
-		title_start_line => $title_start_line,
-		title_end_line   => $title_end_line,
-		line_no          => $line_no,
-		new_location     => $new_location,
-	);
-
-	return %process_object;
+	if (@curl_title) { $process{curl_title} = \@curl_title }
+	my $return = \%process;
+	return $return;
 }
 
 sub get_url_title {
@@ -535,42 +544,46 @@ sub get_url_title {
 		'--compressed', '-s',           '-H',          $user_agent, '--retry', $curl_retry_times,
 		'--max-time',   $curl_max_time, '--no-buffer', '-i',        '--url',   $sub_url,
 	);
+	my $title;
 
 	# Don't set BINMODE on curl's output because we will decode later on
 	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
 		or print {*STDERR} "Could not open curl pipe, Error $ERRNO\n";
 
 	# Processing on the stream is done here
-	my %new_object = process_curl($CURL_OUT);
+	my %new_object = %{ process_curl($CURL_OUT) };
 	close $CURL_OUT or print {*STDERR} "Could not close curl pipe, Error $ERRNO\n";
 
-	# Print out $is_text and $title's values
+	# Print out $process{is_text} and $title's values
 	print {*STDERR} "Ended on line $new_object{line_no}  "
 		. 'Is Text: '
 		. "$new_object{is_text}  "
 		. 'End of Header: '
 		. "$new_object{end_of_header}\n";
-	if ( $new_object{title} and ( !defined $new_object{new_location} ) ) {
-		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
-		print {*STDERR} 'Title Start Line: '
-			. "$new_object{title_start_line}  "
-			. 'Title End Line = '
-			. $new_object{title_end_line}
-			. " Lines from title start to end: $title_length\n";
 
-		$new_object{title} = try_decode( $new_object{title} );
+	my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
+	print {*STDERR} 'Title Start Line: '
+		. "$new_object{title_start_line}  "
+		. 'Title End Line = '
+		. $new_object{title_end_line}
+		. " Lines from title start to end: $title_length\n";
+	if ( !defined $new_object{new_location} && defined $new_object{curl_title} ) {
+		$title = join q(  ), @{ $new_object{curl_title} };
+		$title = try_decode($title);
 
 		# Decode html entities such as &nbsp
-		$new_object{title} = decode_entities( $new_object{title} );
+		$title = decode_entities($title);
 
 		# Replace carriage returns with two spaces
-		$new_object{title} =~ s/\r/  /g;
+		$title =~ s/\r/  /g;
 
-		print {*STDERR} "Title is: \"$new_object{title}\"\n";
+		print {*STDERR} "Title is: \"$title\"\n";
 	}
-	$new_object{url} = $sub_url;
 
-	return %new_object;
+	$new_object{url}   = $sub_url;
+	$new_object{title} = $title;
+
+	return \%new_object;
 }
 
 sub find_url {
@@ -605,14 +618,14 @@ sub find_url {
 		}
 		my $url_new_location;
 
-		my %url_object = get_url_title($find_url_url);
+		my %url_object = %{ get_url_title($find_url_url) };
 
 		my $redirects = 0;
 		while ( defined $url_object{new_location} and $redirects < 3 ) {
 			$redirects++;
 			if ( defined $url_object{new_location} ) {
 				$url_new_location = $url_object{new_location};
-				%url_object       = get_url_title($url_new_location);
+				%url_object       = %{ get_url_title($url_new_location) };
 			}
 		}
 		$url_object{new_location} = $url_new_location;
@@ -721,7 +734,7 @@ sub bot_coin {
 		}
 		print {*STDERR} "There are $count_or instances of 'or'\n";
 		if ( $count_or > 2 ) {
-			print "%I don't support asking more than three things at once... yet\n";
+			print q(%) . "I don't support asking more than three things at once... yet\n";
 		}
 		elsif ( $count_or == 2 ) {
 			$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
@@ -812,6 +825,81 @@ sub sanitize {
 	return $dirty_string;
 }
 
+sub replace_newline {
+	my ($multi_line_string) = @_;
+	$multi_line_string =~ s/\r\n/ /g;
+	$multi_line_string =~ s/\n/ /g;
+	$multi_line_string =~ s/\r/ /g;
+	return $multi_line_string;
+}
+
+sub to_symbols_newline {
+	my ($multi_line_string) = @_;
+	$multi_line_string =~ s/\n/␤/g;
+	$multi_line_string =~ s/\r/↵/g;
+	$multi_line_string =~ s/\t/↹/g;
+
+	return $multi_line_string;
+}
+
+sub to_symbols_ctrl {
+	my ($multi_line_string) = @_;
+
+	my %control_codes = (
+		NULL => chr 0,
+		A    => chr 1,
+		B    => chr 2,
+		C    => chr 3,
+		D    => chr 4,
+		E    => chr 5,
+		F    => chr 6,
+		G    => chr 7,
+		H    => chr 8,
+		I    => chr 9,
+		J    => chr 10,
+		K    => chr 11,
+		L    => chr 12,
+		M    => chr 13,
+		N    => chr 14,
+		O    => chr 15,
+		P    => chr 16,
+		Q    => chr 17,
+		R    => chr 18,
+		S    => chr 19,
+		T    => chr 20,
+		U    => chr 21,
+		V    => chr 22,
+		W    => chr 23,
+		X    => chr 24,
+		Y    => chr 25,
+		Z    => chr 26,
+	);
+
+	foreach my $ascii ( keys %control_codes ) {
+		if ( $ascii eq 'NULL' ) {
+			$multi_line_string =~ s/$control_codes{$ascii}/\\0/g;
+		}
+		else {
+			$multi_line_string =~ s/$control_codes{$ascii}/^$ascii/g;
+		}
+	}
+
+	my $ctrl_lb = chr 27;
+	my $ctrl_bs = chr 28;
+	my $ctrl_rb = chr 29;
+	my $ctrl_ca = chr 30;
+	my $ctrl_us = chr 31;
+	my $ctrl_qm = chr 127;
+	$multi_line_string =~ s/$ctrl_lb/^[/g;
+	$multi_line_string =~ s/$ctrl_bs/^\\/g;
+	$multi_line_string =~ s/$ctrl_rb/^]/g;
+	$multi_line_string =~ s/$ctrl_ca/^^/g;
+	$multi_line_string =~ s/$ctrl_us/^_/g;
+	$multi_line_string =~ s/$ctrl_qm/^?/g;
+
+	return $multi_line_string;
+}
+
 sub strip_cmd {
 	my ($strip_said) = @_;
 	$strip_said =~ s/^!\S* //;
@@ -824,30 +912,29 @@ sub eval_perl {
 	my $perl_all_out;
 	my @perl_args = ( 'eval.pl', $perl_command );
 	my ( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh );
-	use Symbol 'gensym';
 	$perl_stderr_fh = gensym;
 	my $pid = open3( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh, 'perl', @perl_args )
 		or print {*STDERR} "Could not open eval.pl, Error $ERRNO\n";
 	my $perl_stdout = <$perl_stdout_fh>;
 	my $perl_stderr = <$perl_stderr_fh>;
-	waitpid( $pid, 0 );
+	waitpid $pid, 0;
 	close $perl_stdout_fh or print "Could not close eval.pl, Error $ERRNO\n";
 	close $perl_stderr_fh or print "Could not close eval.pl, Error $ERRNO\n";
 
 	if ( defined $perl_stdout ) {
 
-		#$perl_stdout = try_decode($perl_stdout);
 		$perl_all_out = 'STDOUT: «' . $perl_stdout . '» ';
 	}
 	if ( defined $perl_stderr ) {
 
 		#$perl_stderr = try_decode($perl_stderr);
-		$perl_stderr =~ s/(.*)at eval.pl.*(\n?)$/$1$2/gm;
+		$perl_stderr =~ s/isn't numeric in numeric ne .*?eval[.]pl line \d+[.]//g;
 		$perl_all_out .= 'STDERR: «' . $perl_stderr . q(»);
 	}
 	if ( defined $perl_all_out ) {
-		$perl_all_out =~ s/\n/␤/g;
-		$perl_all_out =~ s/\r/↵/g;
+		$perl_all_out = to_symbols_newline($perl_all_out);
+		$perl_all_out = to_symbols_ctrl($perl_all_out);
+
 		$perl_all_out = shorten_text( $perl_all_out, 260 );
 
 		print q(%) . $perl_all_out . "\n";
@@ -856,32 +943,38 @@ sub eval_perl {
 }
 
 sub codepoint_to_unicode {
-	my ( $unicode_code, $force ) = @_;
+	my ( $codepoint_who, $unicode_code, $force ) = @_;
 
 	$unicode_code =~ s/\[u[+](\S+)\]/$1/g;
-	if ( $unicode_code =~ /\b0+\b/ and !$force ) {
+	if ( $unicode_code =~ /\b0+\b/ && !$force ) {
 		print
 			"%Null bytes are prohibited on IRC by RFC1459. If you are a terrible person and want to break the spec, use !UNICODE\n";
 	}
 	else {
-		my @unicode_array = split ' ', $unicode_code;
+		my @unicode_array = split $SPACE, $unicode_code;
 		my $unicode_code2;
 		foreach my $u_line (@unicode_array) {
 			$unicode_code2 .= chr hex $u_line;
 		}
-		$unicode_code2 =~ s/\n/␤/;
-		$unicode_code2 =~ s/\r/↵/;
+
+		$unicode_code2 = to_symbols_newline($unicode_code2);
 
 		print q(%) . $unicode_code2 . "\n";
 	}
+	return;
+}
+
+sub codepoint_to_unicode_force {
+	my @__ = @_;
+	codepoint_to_unicode( @__, 1 );
+	return;
 }
 
 sub urban_dictionary {
-	my ($ud_request) = @_;
+	my ( $ud_who, $ud_request ) = @_;
 
-	use WebService::UrbanDictionary;
-	my $definition;
-	my $example;
+	my ( $definition, $example );
+
 	my $ud = WebService::UrbanDictionary->new;
 
 	my $results = $ud->request($ud_request);
@@ -916,6 +1009,18 @@ sub urban_dictionary {
 	return;
 }
 
+sub get_codepoints {
+	my ( $code_who, $to_unpack ) = @_;
+
+	my @codepoints = unpack 'U*', $to_unpack;
+
+	my $str = sprintf '%x ' x @codepoints, @codepoints;
+	$str =~ s/ $//;
+	$str = uc $str;
+	print q(%) . $str . "\n";
+	return;
+}
+
 # MAIN
 if ( defined $bot_username and $bot_username ne $EMPTY ) {
 	username_defined_pre;
@@ -938,7 +1043,7 @@ if ( $body =~ /$bot_username/ ) {
 }
 
 # Sed functionality. Only called if the history file is defined
-elsif ( $body =~ m{^s/.+/}i and defined $history_file ) {
+if ( $body =~ m{^s/.+/}i and defined $history_file ) {
 	my ( $sed_who, $sed_text ) = sed_replace($body);
 	$sed_text = shorten_text($sed_text);
 
@@ -947,51 +1052,42 @@ elsif ( $body =~ m{^s/.+/}i and defined $history_file ) {
 		print "%<$sed_who> $sed_text\n";
 	}
 }
-elsif ( $body =~ /^!transliterate/ ) {
-	transliterate( $who_said, $body );
-}
-elsif ( $body =~ /^!fullwidth/ or $body =~ /!fw/ ) {
-	my $fullwidth = strip_cmd($body);
 
-	$fullwidth = to_fullwidth($fullwidth);
+sub get_cmd {
+	my ($get_cmd) = @_;
+	$get_cmd =~ s/^!(\S*)\b.*/$1/;
+	return $get_cmd;
+}
+
+sub make_fullwidth {
+	my ( $fw_who, $fw_text ) = @_;
+
+	my $fullwidth = to_fullwidth($fw_text);
 
 	print q(%) . $fullwidth . "\n";
+	return;
 }
-elsif ( $body =~ /^!fromhex / ) {
-	from_hex( $who_said, strip_cmd($body) );
-}
-elsif ( $body =~ /^!u / ) {
-	my $to_unpack = strip_cmd($body);
 
-	my @codepoints = unpack 'U*', $to_unpack;
-
-	my $str = sprintf '%x ' x @codepoints, @codepoints;
-	$str =~ s/ $//;
-	print q(%) . %$str . "\n";
-
-}
-elsif ( $body =~ /^!unicode /i ) {
-	my $main_force = 0;
-	if ( $body =~ /^!UNICODE/ ) {
-		$main_force = 1;
-	}
-	codepoint_to_unicode( strip_cmd($body), $main_force );
-}
-elsif ( $body =~ /^!perl / ) {
-	eval_perl( $who_said, strip_cmd($body) );
-}
-elsif ( $body =~ /^!ud / ) {
-	urban_dictionary( strip_cmd($body) );
-}
-elsif ( $body =~ /^!help/i ) {
+sub print_help {
 	print q(%) . $help_text . "\n";
+	return;
 }
 
-# Find and get URL's page title
-url_format_text( find_url($body) );
-
-if ( defined $bot_username and $bot_username ne $EMPTY ) {
-	username_defined_post;
+my %commands = (
+	transliterate => \&transliterate,
+	fullwidth     => \&make_fullwidth,
+	fw            => \&make_fullwidth,
+	fromhex       => \&from_hex,
+	tohex         => \&to_hex,
+	fortune       => \&get_fortune,
+	u             => \&get_codepoints,
+	perl          => \&eval_perl,
+	ud            => \&urban_dictionary,
+	help          => \&print_help,
+	unicode       => \&codepoint_to_unicode,
+	UNICODE       => \&codepoint_to_unicode_force,
+);
+if ( $body =~ /^!/ && defined $commands{ get_cmd($body) } ) {
+	$commands{ get_cmd($body) }( $who_said, strip_cmd($body) );
 }
 
-exit 0;

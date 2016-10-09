@@ -12,8 +12,11 @@ use English;
 use Time::Seconds;
 use URL::Search 'extract_urls';
 use Text::Unidecode;
+use Convert::EastAsianWidth;
 
 binmode STDOUT, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDOUT, Error $ERRNO\n";
+binmode STDERR, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDERR, Error $ERRNO\n";
+
 our $VERSION = 0.4;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
 my ( $who_said, $body, $bot_username ) = @ARGV;
@@ -27,6 +30,8 @@ my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read 
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell them"';
+my $EMPTY             = q{};
+my $SPACE             = q{ };
 
 my $said_time = time;
 
@@ -57,6 +62,66 @@ sub username_defined_pre {
 	print        {$history_fh} "<$who_said> $body\n"
 		or print {*STDERR} "Failed to append to $history_file, Error $ERRNO\n";
 	close $history_fh or print {*STDERR} "Could not close $history_file, Error $ERRNO\n";
+	return;
+}
+
+sub text_style {
+	my ( $string, $effect, $foreground, $background ) = @_;
+	my %style_table = (
+		bold      => chr 2,
+		italic    => chr 29,
+		underline => chr 31,
+		reset     => chr 15,
+		reverse   => chr 22,
+		color     => chr 3,
+
+	);
+	my %color_table = (
+		white       => '00',
+		black       => '01',
+		blue        => '02',
+		green       => '03',
+		red         => '04',
+		brown       => '05',
+		purple      => '06',
+		orange      => '07',
+		yellow      => '08',
+		light_green => '09',
+		teal        => '10',
+		light_cyan  => '11',
+		light_blue  => '12',
+		pink        => '13',
+		grey        => '14',
+		light_grey  => '15',
+	);
+	if ( defined $background and defined $foreground ) {
+		$string
+			= $style_table{color}
+			. $color_table{$foreground} . q(,)
+			. $color_table{$background}
+			. $string
+			. $style_table{reset};
+	}
+	elsif ( defined $foreground ) {
+		$string = $style_table{color} . $color_table{$foreground} . $string . $style_table{reset};
+	}
+	if ( defined $effect ) {
+		$string = $style_table{$effect} . $string . $style_table{reset};
+	}
+	$string =~ s/$style_table{reset}+/$style_table{reset}/g;
+	return $string;
+
+}
+
+sub from_hex {
+	my ( $from_hex_who, $from_hex_said ) = @_;
+	$from_hex_said =~ s/0x//g;
+	my @decimals = split $SPACE, $from_hex_said;
+	my $hex_string;
+	foreach my $decimal (@decimals) {
+		$hex_string .= hex($decimal) . $SPACE;
+	}
+	print q(%) . $hex_string . "\n";
 	return;
 }
 
@@ -104,7 +169,7 @@ sub seen_nick {
 		# Sort by most recent event and add each formatted line to the return string.
 		foreach my $chan_event ( reverse sort { $event_data{$a} <=> $event_data{$b} } keys %event_data ) {
 			if ( $event_data{$chan_event} != 0 ) {
-				$return_string = $return_string . $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
+				$return_string .= $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
 			}
 		}
 		print "%$return_string\n";
@@ -158,19 +223,19 @@ sub format_time {
 	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years ) = convert_from_secs($tell_time_diff);
 	$tell_return = '[';
 	if ( defined $tell_years ) {
-		$tell_return = $tell_return . $tell_years . 'y ';
+		$tell_return .= $tell_years . 'y ';
 	}
 	if ( defined $tell_days ) {
-		$tell_return = $tell_return . $tell_days . 'd ';
+		$tell_return .= $tell_days . 'd ';
 	}
 	if ( defined $tell_hours ) {
-		$tell_return = $tell_return . $tell_hours . 'h ';
+		$tell_return .= $tell_hours . 'h ';
 	}
 	if ( defined $tell_mins ) {
-		$tell_return = $tell_return . $tell_mins . 'm ';
+		$tell_return .= $tell_mins . 'm ';
 	}
 	if ( defined $tell_secs ) {
-		$tell_return = $tell_return . $tell_secs . 's ';
+		$tell_return .= $tell_secs . 's ';
 	}
 	$tell_return = $tell_return . 'ago]';
 	return $tell_return;
@@ -303,20 +368,20 @@ sub process_sed_replace {
 		$history_who =~ s{^<(.+?)>.*}{$1};
 		my $history_said = $history_line;
 		$history_said =~ s{^<.+?> }{};
-		my $temp_replaced_said = $history_said;
+		my $replaced_said_temp = $history_said;
 
-		if (    $temp_replaced_said =~ m{$before_re}
+		if (    $replaced_said_temp =~ m{$before_re}
 			and $history_said !~ m{^s/}
 			and $history_said !~ m{^!} )
 		{
 			if ($global) {
-				$temp_replaced_said =~ s{$before_re}{$after}g;
+				$replaced_said_temp =~ s{$before_re}{$after}g;
 			}
 			else {
-				$temp_replaced_said =~ s{$before_re}{$after}i;
+				$replaced_said_temp =~ s{$before_re}{$after}i;
 			}
-			if ( $history_said ne $temp_replaced_said ) {
-				$replaced_said = $temp_replaced_said;
+			if ( $history_said ne $replaced_said_temp ) {
+				$replaced_said = $replaced_said_temp;
 				$replaced_who  = $history_who;
 			}
 		}
@@ -570,47 +635,41 @@ sub find_url {
 
 sub url_format_text {
 	my ( $format_success, %url_format_object ) = @_;
-	if ( $format_success != 1 || !defined $url_format_object{title} ) {
+	if ( $format_success != 1 || $url_format_object{title} =~ /^\s*$/ || !$url_format_object{is_text} ) {
 		return 0;
 	}
-	my $cloudflare_text  = q();
+	my $cloudflare_text  = $EMPTY;
 	my $max_title_length = 120;
-	if ( $url_format_object{is_cloudflare} == 1 ) {
-		$cloudflare_text = ' **CLOUDFLARE**';
+	if ( $url_format_object{is_cloudflare} ) {
+
+		#text_style( 'bold', '**CLOUDFLARE**' )
+		$cloudflare_text = $SPACE . text_style( 'CLOUDFLARE ⛅', 'bold', 'orange' );
 	}
 	my $new_location_text;
-	my $cookie_text;
+	my $title_text;
+	my $cookie_text = $EMPTY;
 	if ( $url_format_object{has_cookie} >= 1 ) {
-		$cookie_text = q( ) . q([ 🍪 ]);
-	}
-	else {
-		$cookie_text = q();
+		$cookie_text = $SPACE . text_style( '🍪', undef, 'brown' );
 	}
 	if ( $url_format_object{is_404} ) {
 		print {*STDERR} "find_url return, 404 error\n";
 		return 0;
 	}
-	if ( $url_format_object{is_text} ) {
-		my $short_title = substr $url_format_object{title}, 0, $max_title_length;
-		if (    $url_format_object{title} ne $short_title
-			and $url_format_object{url} !~ m{twitter[.]com/.+/status} )
-		{
-			$url_format_object{title} = $short_title . ' ...';
-		}
-		if ( !$url_format_object{title} ) {
-			print {*STDERR} "find_url return, No title found right before print\n";
-			return 0;
-		}
 
-		if ( defined $url_format_object{new_location} ) {
-			$new_location_text = " >> $url_format_object{new_location}";
-			chomp $new_location_text;
-		}
-		else {
-			$new_location_text = q();
-		}
-		print q(%) . "[ $url_format_object{title} ]" . $new_location_text . $cloudflare_text . $cookie_text;
+	if ( $url_format_object{url} !~ m{twitter[.]com/.+/status} ) {
+		$url_format_object{title} = shorten_text( $url_format_object{title}, $max_title_length );
 	}
+
+	if ( defined $url_format_object{new_location} ) {
+		$new_location_text = ' >> ' . text_style( $url_format_object{new_location}, 'underline' );
+	}
+	else {
+		$new_location_text = $EMPTY;
+	}
+	$title_text = q([ ) . text_style( $url_format_object{title}, undef, 'teal' ) . q( ]);
+	$title_text = text_style( $title_text, 'bold' );
+	print q(%) . "$title_text" . $new_location_text . $cookie_text . $cloudflare_text . "\n";
+
 	return;
 }
 
@@ -719,6 +778,9 @@ sub username_defined_post {
 		if ( $body !~ /^!tell \S+ \S+/ or $body =~ /^!tell help/ ) {
 			print "%$tell_help_text\n";
 		}
+		elsif ( $body =~ /^!tell \S+ in\b/i ) {
+			print "%$tell_in_help_text";
+		}
 		elsif ( $body =~ /^!tell in/ and $body !~ /!tell in \d+[smhd] / ) {
 			print "%$tell_in_help_text\n";
 		}
@@ -742,8 +804,120 @@ sub username_defined_post {
 	return;
 }
 
+sub sanitize {
+	my ($dirty_string) = @_;
+	$dirty_string =~ tr/\000-\037/ /;
+	$dirty_string =~ tr/\127/ /;
+	$dirty_string =~ s/ +/ /g;
+	return $dirty_string;
+}
+
+sub strip_cmd {
+	my ($strip_said) = @_;
+	$strip_said =~ s/^!\S* //;
+	return $strip_said;
+
+}
+
+sub eval_perl {
+	my ( $eval_who, $perl_command ) = @_;
+	my $perl_all_out;
+	my @perl_args = ( 'eval.pl', $perl_command );
+	my ( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh );
+	use Symbol 'gensym';
+	$perl_stderr_fh = gensym;
+	my $pid = open3( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh, 'perl', @perl_args )
+		or print {*STDERR} "Could not open eval.pl, Error $ERRNO\n";
+	my $perl_stdout = <$perl_stdout_fh>;
+	my $perl_stderr = <$perl_stderr_fh>;
+	waitpid( $pid, 0 );
+	close $perl_stdout_fh or print "Could not close eval.pl, Error $ERRNO\n";
+	close $perl_stderr_fh or print "Could not close eval.pl, Error $ERRNO\n";
+
+	if ( defined $perl_stdout ) {
+
+		#$perl_stdout = try_decode($perl_stdout);
+		$perl_all_out = 'STDOUT: «' . $perl_stdout . '» ';
+	}
+	if ( defined $perl_stderr ) {
+
+		#$perl_stderr = try_decode($perl_stderr);
+		$perl_stderr =~ s/(.*)at eval.pl.*(\n?)$/$1$2/gm;
+		$perl_all_out .= 'STDERR: «' . $perl_stderr . q(»);
+	}
+	if ( defined $perl_all_out ) {
+		$perl_all_out =~ s/\n/␤/g;
+		$perl_all_out =~ s/\r/↵/g;
+		$perl_all_out = shorten_text( $perl_all_out, 260 );
+
+		print q(%) . $perl_all_out . "\n";
+	}
+	return;
+}
+
+sub codepoint_to_unicode {
+	my ( $unicode_code, $force ) = @_;
+
+	$unicode_code =~ s/\[u[+](\S+)\]/$1/g;
+	if ( $unicode_code =~ /\b0+\b/ and !$force ) {
+		print
+			"%Null bytes are prohibited on IRC by RFC1459. If you are a terrible person and want to break the spec, use !UNICODE\n";
+	}
+	else {
+		my @unicode_array = split ' ', $unicode_code;
+		my $unicode_code2;
+		foreach my $u_line (@unicode_array) {
+			$unicode_code2 .= chr hex $u_line;
+		}
+		$unicode_code2 =~ s/\n/␤/;
+		$unicode_code2 =~ s/\r/↵/;
+
+		print q(%) . $unicode_code2 . "\n";
+	}
+}
+
+sub urban_dictionary {
+	my ($ud_request) = @_;
+
+	use WebService::UrbanDictionary;
+	my $definition;
+	my $example;
+	my $ud = WebService::UrbanDictionary->new;
+
+	my $results = $ud->request($ud_request);
+	for my $each ( @{ $results->definitions } ) {
+		$definition = $each->definition;
+		$example    = $each->example;
+		last;
+	}
+	if ( !defined $definition ) {
+		return;
+	}
+	$definition = sanitize($definition);
+	$definition = shorten_text($definition);
+
+	$example = sanitize($example);
+	$example = shorten_text($example);
+	$example = text_style( $example, 'italic' );
+
+	$ud_request = ucfirst $ud_request;
+	$ud_request = text_style( $ud_request, 'bold' );
+	my $ud_one_line = "$ud_request: $definition $example";
+
+	#print length $definition;
+	if ( length $ud_one_line > 325 ) {
+		print q(%) . "$ud_request: $definition\n";
+		print q(%) . "$example\n";
+	}
+	else {
+
+		print q(%) . "$ud_one_line\n";
+	}
+	return;
+}
+
 # MAIN
-if ( defined $bot_username and $bot_username ne q() ) {
+if ( defined $bot_username and $bot_username ne $EMPTY ) {
 	username_defined_pre;
 
 }
@@ -776,15 +950,47 @@ elsif ( $body =~ m{^s/.+/}i and defined $history_file ) {
 elsif ( $body =~ /^!transliterate/ ) {
 	transliterate( $who_said, $body );
 }
+elsif ( $body =~ /^!fullwidth/ or $body =~ /!fw/ ) {
+	my $fullwidth = strip_cmd($body);
 
+	$fullwidth = to_fullwidth($fullwidth);
+
+	print q(%) . $fullwidth . "\n";
+}
+elsif ( $body =~ /^!fromhex / ) {
+	from_hex( $who_said, strip_cmd($body) );
+}
+elsif ( $body =~ /^!u / ) {
+	my $to_unpack = strip_cmd($body);
+
+	my @codepoints = unpack 'U*', $to_unpack;
+
+	my $str = sprintf '%x ' x @codepoints, @codepoints;
+	$str =~ s/ $//;
+	print q(%) . %$str . "\n";
+
+}
+elsif ( $body =~ /^!unicode /i ) {
+	my $main_force = 0;
+	if ( $body =~ /^!UNICODE/ ) {
+		$main_force = 1;
+	}
+	codepoint_to_unicode( strip_cmd($body), $main_force );
+}
+elsif ( $body =~ /^!perl / ) {
+	eval_perl( $who_said, strip_cmd($body) );
+}
+elsif ( $body =~ /^!ud / ) {
+	urban_dictionary( strip_cmd($body) );
+}
 elsif ( $body =~ /^!help/i ) {
-	print "%$help_text\n";
+	print q(%) . $help_text . "\n";
 }
 
 # Find and get URL's page title
 url_format_text( find_url($body) );
 
-if ( defined $bot_username and $bot_username ne q() ) {
+if ( defined $bot_username and $bot_username ne $EMPTY ) {
 	username_defined_post;
 }
 

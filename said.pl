@@ -1043,7 +1043,7 @@ if ( $body =~ /$bot_username/ ) {
 }
 
 # Sed functionality. Only called if the history file is defined
-if ( $body =~ m{^s/.+/}i and defined $history_file ) {
+if ( $body =~ m{^s/.+/}i and defined $history_file and $bot_username ne 'skbot' ) {
 	my ( $sed_who, $sed_text ) = sed_replace($body);
 	$sed_text = shorten_text($sed_text);
 

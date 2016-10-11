@@ -8,7 +8,7 @@ use feature 'unicode_strings';
 
 package PerlBot;
 use base qw(Bot::BasicBot);
-our $VERSION = 0.4;
+our $VERSION = 0.5;
 use Encode 'decode_utf8';
 
 # CPAN package list:

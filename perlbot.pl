@@ -27,7 +27,6 @@ use Encode 'decode_utf8';
 binmode STDOUT, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDOUT, Error $?\n";
 binmode STDERR, ':encoding(UTF-8)' or print {*STDERR} "Failed to set binmode on STDERR, Error $?\n";
 
-
 my ( $bot_username, $real_name, $server_address, $server_port, $server_channels ) = @ARGV;
 
 for ( $bot_username, $real_name, $server_address, $server_port, $server_channels ) {
@@ -35,6 +34,19 @@ for ( $bot_username, $real_name, $server_address, $server_port, $server_channels
 		print 'Usage: perlbot.pl "username" "real name" "server address" "server port" "server channel"' . "\n";
 		exit 1;
 	}
+}
+my $said_script;
+if ( -f 'said.in.pl' ) {
+	$said_script = 'said.in.pl';
+	print {*STDERR} "Found $said_script\n";
+}
+elsif ( -f 'said.pl' ) {
+	$said_script = 'said.pl';
+	print {*STDERR} "Found said.pl\n";
+}
+else {
+	print {*STDERR} "Could not find said.pl or said.in.pl\n";
+	exit 1;
 }
 
 my $nickname       = $bot_username;
@@ -51,6 +63,15 @@ sub process_children {
 			$self->say(
 				{   channel => ( $self->channels ),
 					body    => $line,
+				}
+			);
+		}
+		elsif ( $line =~ s/^\$(.*?)%(.*)/$2/ ) {
+			my $msg_who = $1;
+			$self->say(
+				{   channel => 'msg',
+					body    => $line,
+					who     => $msg_who,
 				}
 			);
 		}
@@ -81,9 +102,10 @@ sub said {
 			$body = $addressed . ": $body";
 		}
 	}
+
 	push my (@chansaid_args), 'channel_event.pl', $who_said, $channel, $event, $bot_username;
 	open my $CHANSAID_OUT, '-|', 'perl', @chansaid_args
-		or print 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
+		or print {*STDERR} 'Cannot open $CHANSAID_OUT ' . "pipe, Error $?\n";
 
 	binmode( $CHANSAID_OUT, ":encoding(UTF-8)" )
 		or print {*STDERR} 'Failed to set binmode on $CHANSAID_OUT, Error ' . "$?\n";
@@ -92,8 +114,8 @@ sub said {
 
 	close $CHANSAID_OUT;
 
-	push my (@said_args), 'said.pl', $who_said, $body, $bot_username;
-	open my $SAID_OUT, '-|', "perl", @said_args
+	push my (@said_args), "$said_script", $who_said, $body, $bot_username, $channel;
+	open my $SAID_OUT, '-|', 'perl', @said_args
 		or print 'Cannot open $SAID_OUT ' . "pipe, Error $?\n";
 
 	binmode $SAID_OUT, ':encoding(UTF-8)'

@@ -2,6 +2,7 @@
 use warnings;
 use Safe;
 use utf8;
+use feature 'unicode_strings';
 
 use Benchmark qw(:hireswallclock);
 binmode STDOUT, ':encoding(UTF-8)';
@@ -15,7 +16,7 @@ my $printBuffer;
 open( my $buffer, '>', \$printBuffer );
 my $stdout = select($buffer);
 my $cpmt   = new Safe;
-$cpmt->permit_only(qw(:default :base_io sleep));
+$cpmt->permit_only(qw(:default :base_io sleep rand));
 eval {
 	local $SIG{'ALRM'} = sub { $timedOut = 1; die "alarm\n" };
 	$t0 = Benchmark->new;

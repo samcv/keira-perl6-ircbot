@@ -8,16 +8,18 @@ use Encode;
 use Symbol 'gensym';
 use Encode::Detect;
 use feature 'unicode_strings';
+use POSIX ":sys_wait_h";
 use utf8;
 use English;
 use Time::Seconds;
 use URL::Search 'extract_urls';
 use Text::Unidecode;
 use Convert::EastAsianWidth;
-use WebService::UrbanDictionary;
 
-binmode STDOUT, ':encoding(UTF-8)' or print_stderr("Failed to set binmode on STDOUT, Error $ERRNO");
-binmode STDERR, ':encoding(UTF-8)' or print_stderr("Failed to set binmode on STDERR, Error $ERRNO");
+binmode STDOUT, ':encoding(UTF-8)'
+	or print_stderr("Failed to set binmode on STDOUT, Error $ERRNO");
+binmode STDERR, ':encoding(UTF-8)'
+	or print_stderr("Failed to set binmode on STDERR, Error $ERRNO");
 
 our $VERSION = 0.5;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
@@ -26,8 +28,16 @@ my ( $who_said, $body, $bot_username, $channel ) = @ARGV;
 my ( $history_file, $tell_file, $channel_event_file );
 my $history_file_length = 20;
 
-my $help_text = 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
-	. 'repo url. !u to get unicode hex codepoints for a string. !unicode to convert hex codepoints to unicode. !tohex and !fromhex !transliterate to transliterate most languages into romazied text. !tell or !tell in 1s/m/h/d to tell somebody a message triggered on them speaking. !seen to get last spoke/join/part of a user. s/before/after perl style regex text substitution. !ud to get Urban Dictionary definitions. Also posts the page title of any website pasted in channel and if you address the bot by name and use a ? it will answer the question. Supports !perl to evaluate perl code.';
+my $help_text
+	= 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
+	. 'repo url. !u to get unicode hex codepoints for a string. !unicode to convert hex '
+	. 'codepoints to unicode. !tohex and !fromhex !transliterate to transliterate most '
+	. 'languages into romazied text. !tell or !tell in 1s/m/h/d to tell somebody a message '
+	. 'triggered on them speaking. !seen to get last spoke/join/part of a user. s/before/after '
+	. 'perl style regex text substitution. !ud to get Urban Dictionary definitions. Also posts '
+	. 'the page title of any website pasted in channel and if you address the bot by name and use '
+	. 'a ? it will answer the question. Supports !perl to evaluate perl code.';
+
 my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
@@ -79,8 +89,8 @@ my %control_codes = (
 my $said_time = time;
 
 if ( !defined $body || !defined $who_said ) {
-	print_stderr('Did not receive any input');
-	print_stderr('Usage: said.pl nickname "text" bot_username channel');
+	print_stderr(q/Did not receive any input/);
+	print_stderr(q/Usage: said.pl nickname "text" bot_username channel/);
 	exit 1;
 }
 else {
@@ -137,7 +147,7 @@ sub msg_same_origin {
 		msg_channel($so_msg_text) and return 1;
 	}
 	else {
-		print_stderr("Channel is not defined, Assuming this is a test so printing to 'channel'");
+		print_stderr(q/Channel is not defined, Assuming this is a test so printing to 'channel'/);
 		msg_channel($so_msg_text) and return 1;
 	}
 	return 0;
@@ -183,10 +193,7 @@ sub username_defined_pre {
 
 sub format_action {
 	my ( $action_who, $action_text ) = @_;
-	$action_text = chr(1) . chr(65) . chr(67) . chr(84) . chr(73) . chr(79) . chr(78) . chr(32) . $action_text . chr(1);
-	msg_same_origin( $action_who, $action_text );
-	$action_text = get_codepoints($action_text);
-
+	$action_text = "\cA" . 'ACTION' . $SPACE . $action_text . "\cA";
 	msg_same_origin( $action_who, $action_text ) and return 1;
 	return 0;
 
@@ -221,12 +228,14 @@ sub text_style {
 			. $style_table{reset};
 	}
 	elsif ( defined $foreground ) {
-		$string = $style_table{color} . $color_table{$foreground} . $string . $style_table{reset};
+		$string = $style_table{color} . $color_table{$foreground} . $string . $style_table{color};
 	}
 	if ( defined $effect ) {
 		$string = $style_table{$effect} . $string . $style_table{reset};
 	}
 	$string =~ s/$style_table{reset}+/$style_table{reset}/g;
+	$string =~ s/$style_table{reset}+/$style_table{color}/g;
+
 	return $string;
 
 }
@@ -478,14 +487,13 @@ sub tell_nick_command {
 		msg_same_origin( $who_said, $tell_in_help_text ) and return 1;
 	}
 	else {
-
 		my $tell_who         = $tell_nick_body;
 		my $tell_text        = $tell_nick_body;
 		my $tell_remind_when = $tell_nick_body;
-		if ( $tell_nick_body =~ /^in / or $tell_nick_body =~ /^!tell help/ ) {
-			$tell_remind_when =~ s/^in (\S+) .*/$1/;
-			$tell_text =~ s/^in \S+ \S+ (.*)/$1/;
-			$tell_who =~ s/^in \S+ (\S+) .*/$1/;
+		if ( $tell_nick_body =~ m/^in (\S+) (\S+) (.*)/ or $tell_nick_body =~ /^!tell help/ ) {
+			$tell_remind_when = $1;
+			$tell_who         = $2;
+			$tell_text        = $3;
 
 			if ( $tell_remind_when =~ s/^(\d+)s$/$1/ ) {
 				unidecode($tell_remind_when);
@@ -515,14 +523,12 @@ sub tell_nick_command {
 		open my $tell_fh, '>>', "$tell_file" or print_stderr("Could not open $tell_file, Error $ERRNO");
 		binmode $tell_fh, ':encoding(UTF-8)'
 			or print_stderr("Failed to set binmode on tell_fh, Error, $ERRNO");
-
 		if ( print {$tell_fh} "$said_time $tell_remind_time <$tell_who_spoke> >$tell_who< $tell_text\n" ) {
 			$tell_nick_command_return = 1;
 		}
 		else {
 			print_stderr("Failed to append to $tell_file, Error $ERRNO");
 		}
-
 		close $tell_fh or print_stderr("Could not close $tell_file, Error $ERRNO");
 	}
 	return $tell_nick_command_return;
@@ -615,8 +621,7 @@ sub sed_replace {
 }
 
 sub process_curl {
-	my ($CURL_OUT) = @_;
-
+	my ( $curl_pid, $CURL_OUT, $CURL_STDERR ) = @_;
 	my %process = (
 		end_of_header      => 0,
 		is_text            => 0,
@@ -634,16 +639,19 @@ sub process_curl {
 	my $title_start_regex = '.*<title.*?>';
 	my $title_end_regex   = '</title>.*';
 	my @curl_title;
+
+	#while ( defined( my $curl_line = <$CURL_OUT> ) or defined( my $curl_error_line = <$CURL_STDERR> ) ) {
+
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 
 		# Processing done only within the header
-		if ( $process{end_of_header} == 0 ) {
+		if ( $process{end_of_header} == 0 and defined $curl_line ) {
 
 			# Detect end of header
 			if ( $curl_line =~ /^\s*$/ ) {
 				$process{end_of_header} = 1;
 				if ( $process{is_text} == 0 or defined $process{new_location} ) {
-					print_stderr("Stopping because it's not text or a new location is defined");
+					print_stderr(q/Stopping because it's not text or a new location is defined/);
 					last;
 				}
 			}
@@ -656,7 +664,7 @@ sub process_curl {
 		}
 
 		# Processing done after the header
-		else {
+		elsif ( defined $curl_line ) {
 
 			# Find the <title> element
 			if ( $curl_line =~ s{$title_start_regex}{}i ) {
@@ -692,45 +700,112 @@ sub process_curl {
 
 		$process{line_no}++;
 	}
+
+	#$process{curl_return} = $? >> 8;
+	#print_stderr("$process{curl_return} in process");
+
 	if (@curl_title) { $process{curl_title} = \@curl_title }
 	my $return = \%process;
-	return $return;
+	return \%process;
 }
 
 sub get_url_title {
-	my ($sub_url) = @_;
+	my ( $sub_url, $curl_unsafe_ssl ) = @_;
 	print_stderr(qq(Curl Location: "$sub_url"));
-	my $curl_retry_times = 1;
 	my $user_agent
-		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36';
-	my $curl_max_time = 5;
-	my @curl_args     = (
-		'--compressed', '-s',           '-H',          $user_agent, '--retry', $curl_retry_times,
-		'--max-time',   $curl_max_time, '--no-buffer', '-i',        '--url',   $sub_url,
+		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) '
+		. 'AppleWebKit/537.36 (KHTML, like Gecko) '
+		. 'Chrome/53.0.2785.116 Safari/537.36';
+	my @curl_unsafe_ssl_flags = ('-k');
+
+	if ( !defined $curl_unsafe_ssl ) {
+		$curl_unsafe_ssl = 'NO';
+	}
+
+	#$curl_unsafe_ssl = $EMPTY;
+	my $curl_max_time    = 5;
+	my $curl_retry_times = 1;
+	my @curl_args;
+	@curl_args = (
+		'--compressed', '-H',          $user_agent, '--retry', $curl_retry_times, '--max-time',
+		$curl_max_time, '--no-buffer', '-i',        '--url',   $sub_url
 	);
+	if ( $curl_unsafe_ssl eq 'UNSAFE_SSL' ) {
+		print_stderr("UNSAFE Setting curl unsafe-ssl to $curl_unsafe_ssl");
+		unshift @curl_args, @curl_unsafe_ssl_flags;
+		print "trying to unshift\n";
+	}
+	foreach (@curl_args) {
+		print " $_";
+	}
+
 	my $title;
+	my ( $CURL_STDERR, $CURL_STDIN, $CURL_OUT );
+
+	# If we don't set this sometimes weird things happen and filehandles could get combined
+	#$CURL_STDERR = gensym;
 
 	# Don't set BINMODE on curl's output because we will decode later on
-	open3( undef, my $CURL_OUT, undef, 'curl', @curl_args )
+	#my $curl_pid = open3( $CURL_STDIN, $CURL_OUT, $CURL_STDERR, 'curl', @curl_args )
+	my $curl_pid = open( $CURL_OUT, '-|', 'curl', @curl_args )
 		or print_stderr("Could not open curl pipe, Error $ERRNO");
 
 	# Processing on the stream is done here
-	my %new_object = %{ process_curl($CURL_OUT) };
-	close $CURL_OUT or print_stderr("Could not close curl pipe, Error $ERRNO");
+	my %new_object = %{ process_curl( $curl_pid, $CURL_OUT, $CURL_STDERR ) };
 
-	# Print out $process{is_text} and $title's values
-	print_stderr( "Ended on line $new_object{line_no}  "
-			. 'Is Text: '
-			. "$new_object{is_text}  "
-			. 'End of Header: '
-			. "$new_object{end_of_header}" );
+	#	my %new_object = %{ process_curl( $curl_pid, $CURL_OUT, $CURL_STDERR ) };
 
-	my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
-	print_stderr( 'Title Start Line: '
-			. "$new_object{title_start_line}  "
-			. 'Title End Line = '
-			. $new_object{title_end_line}
-			. " Lines from title start to end: $title_length" );
+	if ( defined $CURL_OUT ) {
+		if ( $CURL_OUT->opened ) {
+			close $CURL_OUT
+				or print_stderr("Could not close curl out pipe, Error $ERRNO");
+			if ( !defined $new_object{curl_return} ) {
+				$new_object{curl_return} = $? >> 8;
+			}
+		}
+	}
+	if ( defined $CURL_STDIN ) {
+		if ( $CURL_STDIN->opened ) {
+			close $CURL_STDIN or print_stderr("Could not close curl in pipe, Error $ERRNO");
+		}
+		if ( !defined $new_object{curl_return} ) {
+			$new_object{curl_return} = $? >> 8;
+		}
+	}
+	if ( defined $CURL_STDERR ) {
+		if ( $CURL_STDIN->opened ) {
+			close $CURL_STDERR or print_stderr("Could not close curl stderr pipe, Error $ERRNO");
+			if ( !defined $new_object{curl_return} ) {
+				$new_object{curl_return} = $? >> 8;
+			}
+		}
+	}
+	my $curl_return = $new_object{curl_return};
+	print_stderr("Curl return is $curl_return");
+	if ( $curl_return == 0 ) {
+
+		# Print out $process{is_text} and $title's values
+		print_stderr( "Ended on line $new_object{line_no}  "
+				. 'Is Text: '
+				. "$new_object{is_text}  "
+				. 'End of Header: '
+				. "$new_object{end_of_header}  "
+				. "ssl error: $new_object{ssl_error}" );
+
+		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
+		print_stderr( 'Title Start Line: '
+				. "$new_object{title_start_line}  "
+				. 'Title End Line = '
+				. $new_object{title_end_line}
+				. " Lines from title start to end: $title_length" );
+	}
+	else {
+		print_stderr("There was a problem with curl.  Error code $new_object{curl_return}");
+
+	}
+
+	print_stderr("There was a problem with curl.  Error code $new_object{curl_return}");
+
 	if ( !defined $new_object{new_location} && defined $new_object{curl_title} ) {
 		$title = join q(  ), @{ $new_object{curl_title} };
 		$title = try_decode($title);
@@ -743,9 +818,11 @@ sub get_url_title {
 
 		print_stderr(qq(Title is: "$title"));
 	}
-
 	$new_object{url}   = $sub_url;
 	$new_object{title} = $title;
+	$curl_return       = $new_object{curl_return};
+	print "$curl_return\n";
+	$new_object{curl_return} = \$curl_return;
 
 	return \%new_object;
 }
@@ -772,12 +849,12 @@ sub find_url {
 	if ( defined $find_url_url ) {
 
 		if ( $find_url_url =~ m/;/ ) {
-			print_stderr("URL has comma(s) in it. Error.");
+			print_stderr('URL has comma(s) in it. Error.');
 			$find_url_url =~ s/;/%3B/xmsg;
 			return 0;
 		}
 		elsif ( $find_url_url =~ m/\$/ ) {
-			print_stderr("URL has \$ sign in it. Error.");
+			print_stderr('URL has $ sign in it. Error.');
 			return 0;
 		}
 		my $url_new_location;
@@ -792,16 +869,52 @@ sub find_url {
 				%url_object       = %{ get_url_title($url_new_location) };
 			}
 		}
+		my $return_code  = ${ $url_object{curl_return} };
+		my $return_tries = 0;
+		my $bad_ssl;
+		print "RETURN CODE IS $return_code\n";
+		if (   $return_code == 35
+			or $return_code == 51
+			or $return_code == 53
+			or $return_code == 54
+			or $return_code == 58
+			or $return_code == 59
+			or $return_code == 60
+			or $return_code == 64
+			or $return_code == 66
+			or $return_code == 77
+			or $return_code == 82
+			or $return_code == 83
+			or $return_code == 90
+			or $return_code == 91 )
+		{
+			print "RETURN CODE MATCH FOR BAD SSL LOOP\n";
+			while ( defined $url_object{curl_return} and $return_tries < 2 ) {
+				$bad_ssl = 'BAD_SSL';
+				if ( $url_object{curl_return} == 0 or $url_object{curl_return} == 23 ) {last}
+				if ( defined $url_new_location ) {
+					%url_object = %{ get_url_title( $url_new_location, 'UNSAFE_SSL' ) };
+				}
+				else {
+					print "getting bad ssl page\n";
+					%url_object = %{ get_url_title( $find_url_caller_text, 'UNSAFE_SSL' ) };
+				}
+				$return_tries++;
+			}
+		}
+		if ($return_tries) {
+			$url_object{curl_return} = \$return_code;
+		}
 		$url_object{new_location} = $url_new_location;
 
-		if ( $url_object{is_text} && defined $url_object{title} ) {
-			if ( $find_url_url !~ m{twitter[.]com/.+/status} ) {
+		if ( $url_object{is_text} && defined $url_object{title} || $url_object{curl_return} != 0 ) {
+			if ( $find_url_url !~ m{twitter[.]com/.+/status} or m{reddit[.]com/} ) {
 				$url_object{title} = shorten_text( $url_object{title}, $max_title_length );
 			}
-			return ( 1, %url_object );
+			return ( 1, \%url_object, $bad_ssl );
 		}
 		else {
-			print_stderr("find_url return, it's not text or no title found");
+			print_stderr(q/find_url return, it's not text or no title found/);
 			return 0;
 		}
 	}
@@ -811,22 +924,110 @@ sub find_url {
 }
 
 sub url_format_text {
-	my ( $format_success, %url_format_object ) = @_;
+	my ( $format_success, $ref, $bad_ssl ) = @_;
+	my %url_format_object;
+	if ( defined $ref ) {
+		%url_format_object = %{$ref};
+	}
+	else {
+		print_stderr('$ref is not defined!!!');
+	}
+	my %curl_exit_codes = (
+		1 => "CURLE_UNSUPPORTED_PROTOCOL The URL you passed to libcurl used a protocol that this "
+			. "libcurl does not support. The support might be a compile-time option that you "
+			. "didn't use, it can be a misspelled protocol string or just a protocol libcurl "
+			. "has no code for.",
+		2 => "CURLE_FAILED_INIT Very early initialization code failed. This is likely to be an "
+			. "internal error or problem, or a resource problem where something fundamental "
+			. "couldn't get done at init time.",
+		3 => 'CURLE_URL_MALFORMAT The URL was not properly formatted.',
+		4 => 'CURLE_NOT_BUILT_IN A requested feature, protocol or option was not found built-in '
+			. 'in this libcurl due to a build-time decision. This means that a feature or option '
+			. 'was not enabled or explicitly disabled when libcurl was built and in order to '
+			. 'get it to function you have to get a rebuilt libcurl.',
+		5 => "CURLE_COULDNT_RESOLVE_PROXY Couldn't resolve proxy. The given proxy host could "
+			. "not be resolved.",
+		6 => "CURLE_COULDNT_RESOLVE_HOST Couldn't resolve host. The given remote host was not resolved.",
+		7 => 'CURLE_COULDNT_CONNECT Failed to connect() to host or proxy.',
+		8 => "CURLE_FTP_WEIRD_SERVER_REPLY The server sent data libcurl couldn't parse. This "
+			. "error code is used for more than just FTP",
+		9 => 'CURLE_REMOTE_ACCESS_DENIED We were denied access to the resource given in the URL. '
+			. 'For FTP, this occurs while trying to change to the remote directory.',
+		10 => 'CURLE_FTP_ACCEPT_FAILED',
+		11 => 'CURLE_FTP_WEIRD_PASS_REPLY',
+		12 => 'CURLE_FTP_ACCEPT_TIMEOUT',
+		13 => 'CURLE_FTP_WEIRD_PASV_REPLY',
+		14 => 'CURLE_FTP_WEIRD_227_FORMAT',
+		15 => 'CURLE_FTP_CANT_GET_HOST',
+		16 => 'CURLE_HTTP2',
+		17 => 'CURLE_FTP_COULDNT_SET_TYPE',
+		18 => 'CURLE_PARTIAL_FILE',
+		19 => 'CURLE_FTP_COULDNT_RETR_FILE',
+		21 => 'CURLE_QUOTE_ERROR',
+		22 => 'CURLE_HTTP_RETURNED_ERROR',
+		23 => "CURLE_WRITE_ERROR An error occurred when writing received data to a local file, or "
+			. "an error was returned to libcurl from a write callback.",
+		35 => 'CURLE_SSL_CONNECT_ERROR A problem occurred somewhere in the SSL/TLS handshake. '
+			. "Curl probably doesn't support this type of crypto.",
+		43 => 'CURLE_BAD_FUNCTION_ARGUMENT Internal error. A function was called with a bad parameter.',
+		45 => "CURLE_INTERFACE_FAILED Interface error. A specified outgoing interface could not be "
+			. "used. Set which interface to use for outgoing connections' source IP address with "
+			. "CURLOPT_INTERFACE.",
+		51 => "CURLE_PEER_FAILED_VERIFICATION The remote server's SSL certificate or SSH md5 "
+			. "fingerprint was deemed not OK.",
+		53 => "CURLE_SSL_ENGINE_NOTFOUND The specified crypto engine wasn't found.",
+		54 => 'CURLE_SSL_ENGINE_SETFAILED Failed setting the selected SSL crypto engine as default!',
+		58 => 'CURLE_SSL_CERTPROBLEM Problem with the local client certificate.',
+		59 => "CURLE_SSL_CIPHER Couldn't use specified cipher.",
+		60 => 'CURLE_SSL_CACERT Peer certificate cannot be authenticated with known CA certificates.',
+		64 => 'CURLE_USE_SSL_FAILED Requested FTP SSL level failed.',
+		66 => 'CURLE_SSL_ENGINE_INITFAILED Initiating the SSL Engine failed.',
+		77 => 'CURLE_SSL_CACERT_BADFILE Problem with reading the SSL CA cert (path? access rights?)',
+		78 => 'CURLE_REMOTE_FILE_NOT_FOUND The resource referenced in the URL does not exist.',
+		80 => 'CURLE_SSL_SHUTDOWN_FAILED Failed to shut down the SSL connection.',
+		82 => 'CURLE_SSL_CRL_BADFILE Failed to load CRL file.',
+		83 => 'CURLE_SSL_ISSUER_ERROR Issuer check failed.',
+		90 => 'CURLE_SSL_PINNEDPUBKEYNOTMATCH Failed to match the pinned key specified with '
+			. 'CURLOPT_PINNEDPUBLICKEY.',
+		91 => 'CURLE_SSL_INVALIDCERTSTATUS Status returned failure when asked with '
+			. 'CURLOPT_SSL_VERIFYSTATUS . ',
+	);
+	my $curl_exit_value;
+	my $curl_exit_text;
+	if ( defined $url_format_object{curl_return} ) {
+		$curl_exit_value = ${ $url_format_object{curl_return} };
+		if ( defined $curl_exit_codes{$curl_exit_value} ) {
+			$curl_exit_text = $curl_exit_codes{$curl_exit_value};
+		}
+		if ( ( defined $bad_ssl && !defined $url_format_object{title} )
+			|| $curl_exit_value != 0 && $curl_exit_value != 23 && defined $curl_exit_value )
+		{
+			print_stderr("HELPPP");
+			print_stderr($curl_exit_text);
+			msg_same_origin( $who_said,
+				"$url_format_object{url} . Curl error code: ${$url_format_object{curl_return}} $curl_exit_text" );
+		}
+	}
+
+	print_stderr("CURL return $curl_exit_value");
+
 	if ( $format_success != 1 || $url_format_object{title} =~ /^\s*$/ || !$url_format_object{is_text} ) {
+		print_stderr("failed to format succes or title is blank or it's not text");
 		return 0;
 	}
 	my $cloudflare_text  = $EMPTY;
 	my $max_title_length = 120;
 	if ( $url_format_object{is_cloudflare} ) {
 
-		#text_style( 'bold', '**CLOUDFLARE**' )
+		#text_style( ' bold ', '**CLOUDFLARE**' )
 		$cloudflare_text = $SPACE . text_style( 'CLOUDFLARE ⛅', 'bold', 'orange' );
 	}
 	my $new_location_text;
 	my $title_text;
-	my $cookie_text = $EMPTY;
+	my $cookie_text  = $EMPTY;
+	my $bad_ssl_text = $EMPTY;
 	if ( $url_format_object{has_cookie} >= 1 ) {
-		$cookie_text = $SPACE . text_style( '🍪', undef, 'brown' );
+		$cookie_text = $SPACE . text_style( '🍪', 'bold', 'brown' );
 	}
 	if ( $url_format_object{is_404} ) {
 		print_stderr('find_url return, 404 error');
@@ -838,14 +1039,20 @@ sub url_format_text {
 	}
 
 	if ( defined $url_format_object{new_location} ) {
-		$new_location_text = ' >> ' . text_style( $url_format_object{new_location}, 'underline' );
+		$new_location_text = ' >> ' . text_style( $url_format_object{new_location}, 'underline', 'blue' );
 	}
 	else {
 		$new_location_text = $EMPTY;
 	}
+	if ( defined $bad_ssl ) {
+		if ( $url_format_object{curl_return} eq '60' ) {
+			$bad_ssl_text = $SPACE . text_style( 'BAD SSL CERT', 'bold', 'white', 'red' );
+		}
+	}
 	$title_text = q([ ) . text_style( $url_format_object{title}, undef, 'teal' ) . q( ]);
 	$title_text = text_style( $title_text, 'bold' );
-	msg_same_origin( $who_said, $title_text . $new_location_text . $cookie_text . $cloudflare_text );
+	msg_same_origin( $who_said,
+		$title_text . $new_location_text . $cookie_text . $cloudflare_text . $bad_ssl_text );
 
 	return;
 }
@@ -898,7 +1105,7 @@ sub bot_coin {
 		}
 		print_stderr("There are $count_or instances of 'or'");
 		if ( $count_or > 2 ) {
-			msg_same_origin( $coin_who, "I don't support asking more than three things at once... yet" );
+			msg_same_origin( $coin_who, q/I don't support asking more than three things at once... yet/ );
 		}
 		elsif ( $count_or == 2 ) {
 			$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
@@ -955,8 +1162,10 @@ sub username_defined_post {
 		print_stderr( localtime(time) . "\tCalling tell_nick" );
 		my ($tell_to_say) = tell_nick($who_said);
 		if ( defined $tell_to_say ) {
-			print_stderr("Tell to say line next");
+			print_stderr('Tell to say line next');
 			msg_same_origin( $who_said, $tell_to_say );
+			url_format_text( find_url($tell_to_say) );
+
 		}
 	}
 
@@ -970,8 +1179,7 @@ sub username_defined_post {
 sub sanitize {
 	my ($dirty_string) = @_;
 	$dirty_string =~ tr/\000-\032/ /;
-	my $delete = chr 127;
-	$dirty_string =~ s/$delete//;
+	$dirty_string =~ s/$control_codes{DEL}//;
 	$dirty_string =~ s/ +/ /g;
 	return $dirty_string;
 }
@@ -1041,11 +1249,16 @@ sub eval_perl {
 	$perl_stderr_fh = gensym;
 	my $pid = open3( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh, 'perl', @perl_args )
 		or print_stderr("Could not open eval.pl, Error $ERRNO");
-	my $perl_stdout = <$perl_stdout_fh>;
-	my $perl_stderr = <$perl_stderr_fh>;
+	my $perl_stdout = do { local $INPUT_RECORD_SEPARATOR; <$perl_stdout_fh> };
+	my $perl_stderr = do { local $INPUT_RECORD_SEPARATOR; <$perl_stderr_fh> };
+
 	waitpid $pid, 0;
-	close $perl_stdout_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
-	close $perl_stderr_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
+	if ( defined $perl_stdout_fh ) {
+		close $perl_stdout_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
+	}
+	if ( defined $perl_stdout_fh ) {
+		close $perl_stderr_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
+	}
 
 	if ( defined $perl_stdout ) {
 
@@ -1098,17 +1311,16 @@ sub codepoint_to_unicode_force {
 
 sub urban_dictionary {
 	my ( $ud_who, $ud_request ) = @_;
-
+	my @ud_args = ( 'ud.pl', $ud_request );
+	my $ud_pid = open( my $UD_OUT, '-|', 'perl', @ud_args )
+		or print_stderr("Could not open UD pipe, Error $ERRNO");
 	my ( $definition, $example );
-
-	my $ud = WebService::UrbanDictionary->new;
-
-	my $results = $ud->request($ud_request);
-	for my $each ( @{ $results->definitions } ) {
-		$definition = $each->definition;
-		$example    = $each->example;
-		last;
+	my $ud_line = do { local $INPUT_RECORD_SEPARATOR; <$UD_OUT> };
+	if ( $ud_line =~ m{%DEF%(.*)%EXA%(.*)} ) {
+		$definition = $1;
+		$example    = $2;
 	}
+
 	if ( !defined $definition ) {
 		return;
 	}
@@ -1187,22 +1399,9 @@ sub get_cmd {
 
 sub make_fullwidth {
 	my ( $fw_who, $fw_text ) = @_;
-	my @color_loc;
-	my $offset = 0;
-
-	my %style_table = (
-		bold      => chr 2,
-		italic    => chr 29,
-		underline => chr 31,
-		reset     => chr 15,
-		reverse   => chr 22,
-		color     => chr 3,
-
-	);
-
 	my $fullwidth = to_fullwidth($fw_text);
 
-	# Match $ctrl_c color codes and convert the numbers back if they're part of a color code
+	# Match $style_table{color} aka ^C codes and convert the numbers back if they're part of a color code
 	$fullwidth =~ s/(\N{U+03}\d?\d?\N{U+FF0C}?\d?\d?)/$1 =~  tr{\N{U+FF10}-\N{U+FF19}\N{U+FF0C}}{0-9,}r/e;
 
 	msg_same_origin( $fw_who, $fullwidth ) and return 1;
@@ -1222,13 +1421,13 @@ my %commands = (
 	fw            => \&make_fullwidth,
 	fromhex       => \&from_hex,
 	tohex         => \&to_hex,
-	fortune       => \&get_fortune,
 	u             => \&get_codepoints,
 	uc            => \&uppercase,
 	ucirc         => \&uppercase_irc,
 	lc            => \&lowercase,
 	lcirc         => \&lowercase_irc,
 	perl          => \&eval_perl,
+	p             => \&eval_perl,
 	ud            => \&urban_dictionary,
 	help          => \&print_help,
 	unicode       => \&codepoint_to_unicode,
@@ -1236,6 +1435,10 @@ my %commands = (
 	action        => \&format_action,
 );
 if ( $body =~ /^!/ && defined $commands{ get_cmd($body) } ) {
-	$commands{ get_cmd($body) }( $who_said, strip_cmd($body) );
+	$commands{ get_cmd $body }( $who_said, strip_cmd $body );
+}
+else {
+	# Find and get URL's page title
+	url_format_text( find_url($body) );
 }
 

@@ -10,10 +10,12 @@ This is an IRC bot which will respond to the IRC channel when somebody pastes a 
 Usage: `!tell nickname Message to tell them`
 
 This will tell that person the message the next time they speak in the channel or private message the bot.
+
 #### Tell in
 Usage: `!tell in 1m/h/d Message to tell them`
 
 This will tell that person the message after that many minutes/hours/days that you specify.  It is triggered when they speak in the channel or private message the bot.
+
 #### Seen
 Usage: `!seen nickname`
 Will tell you the last time that nickname has spoken, joined or parted/quit the channel.
@@ -60,7 +62,17 @@ Usage: `!ud thing to look up`
 
 Ouput: The top definition and example from urbandictionary.com
 
+#### Questions
+You can have the bot answer yes or no questions.  Just address the bot by name like so:
 
+`mybot is the sky blue?`
+
+Response will be either `Is the sky blue? No.` or `Is the sky blue? Yes.`
+
+You can also ask it a this or that question, with a maximum number of arguments being three.
+`mybot is it going to be a good day today or a bad day today?`
+
+`It is going to be a good day today` or `A bad day today`
 
 	fullwidth
 	fw

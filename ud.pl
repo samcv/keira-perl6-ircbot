@@ -16,7 +16,8 @@ for my $each ( @{ $results->definitions } ) {
 	$example    = $each->example;
 	last;
 }
-if ( !defined $definition ) {
-	return;
+if ( !defined $definition && !defined $example ) {
+	exit 1;
 }
 print q(%) . 'DEF' . q(%) . $definition . q(%) . 'EXA' . q(%) . $example . "\n";
+exit 0;

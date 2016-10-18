@@ -4,3 +4,4 @@ _*
 *.txt
 nytprof*
 remove.sh
+.precomp/

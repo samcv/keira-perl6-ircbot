@@ -37,7 +37,7 @@ for ( $bot_username, $real_name, $server_address, $server_port, $server_channels
 }
 my $said_script;
 if ( -f 'said.in.pl' ) {
-	$said_script = 'said.in.pl';
+	$said_script = 'said-active.pl';
 	print {*STDERR} "Found $said_script\n";
 }
 elsif ( -f 'said.pl' ) {

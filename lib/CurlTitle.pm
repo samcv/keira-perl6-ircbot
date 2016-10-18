@@ -75,7 +75,7 @@ sub process_curl {
 				$curl_line =~ s{$title_text_regex}{$1};
 				if ( $curl_line !~ /^\s*$/ ) {
 					push @curl_title, $curl_line;
-					print {*STDERR} "Line $process{line_no} is '$curl_line'";
+					print {*STDERR} "Line $process{line_no} is '$curl_line'\n";
 				}
 			}
 
@@ -104,7 +104,7 @@ sub get_url_title_new {
 
 		# If the location starts with a / then it is a reference to a url on the same domain
 		if ( $url_object{new_location} =~ m{^/} ) {
-			print_stderr('Matched a / in the url new location start');
+			print {*STDERR} "Matched a / in the url new location start\n";
 			my $temp6 = $url_object{url};
 			$temp6 =~ s{(https?://\S*?)/.*}{$1};
 			$url_object{new_location} = $temp6 . $url_object{new_location};
@@ -115,7 +115,9 @@ sub get_url_title_new {
 			%url_object       = %{ get_url_title($url_new_location) };
 		}
 	}
-	my $return_code  = $url_object{curl_return};
+	my $return_code = $url_object{curl_return};
+	print {*STDERR} "IN NEW SECTION CURL ERROR IS $return_code\n";
+
 	my $return_tries = 0;
 	my $bad_ssl;
 	if (   $return_code == 35
@@ -133,7 +135,7 @@ sub get_url_title_new {
 		or $return_code == 90
 		or $return_code == 91 )
 	{
-		print_stderr("RETURN CODE MATCH FOR BAD SSL LOOP");
+		print {*STDERR} "RETURN CODE MATCH FOR BAD SSL LOOP\n";
 		while ( defined $url_object{curl_return} and $return_tries < 2 ) {
 			$bad_ssl = 'BAD_SSL';
 			if ( $url_object{curl_return} == 0 or $url_object{curl_return} == 23 ) {last}
@@ -141,10 +143,13 @@ sub get_url_title_new {
 				%url_object = %{ get_url_title( $url_new_location, 'UNSAFE_SSL' ) };
 			}
 			else {
-				print_stderr("getting bad ssl page");
+				print {*STDERR} "getting bad ssl page";
 				%url_object = %{ get_url_title( $sub_url, 'UNSAFE_SSL' ) };
 			}
 			$return_tries++;
+		}
+		if ( defined $bad_ssl ) {
+			$url_object{bad_ssl} = 'BAD_SSL';
 		}
 	}
 	if ($return_tries) {
@@ -156,7 +161,7 @@ sub get_url_title_new {
 
 sub get_url_title {
 	my ( $sub_url, $curl_unsafe_ssl ) = @_;
-	print {*STDERR} qq/Curl Location: "$sub_url"/;
+	print {*STDERR} qq/Curl Location: "$sub_url"\n/;
 
 	my $user_agent
 		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) '
@@ -176,7 +181,7 @@ sub get_url_title {
 		$curl_max_time, '--no-buffer', '-i',        '--url',   $sub_url,
 	);
 	if ( $curl_unsafe_ssl eq 'UNSAFE_SSL' ) {
-		print {*STDERR} "UNSAFE Setting curl unsafe-ssl to $curl_unsafe_ssl";
+		print {*STDERR} "UNSAFE Setting curl unsafe-ssl to $curl_unsafe_ssl\n";
 		unshift @curl_args, @curl_unsafe_ssl_flags;
 	}
 
@@ -189,14 +194,14 @@ sub get_url_title {
 	# Don't set BINMODE on curl's output because we will decode later on
 	#my $curl_pid = open3( $CURL_STDIN, $CURL_OUT, $CURL_STDERR, 'curl', @curl_args )
 	my $curl_pid = open $CURL_OUT, '-|', 'curl', @curl_args
-		or print {*STDERR} "Could not open curl pipe, Error $ERRNO";
+		or print {*STDERR} "Could not open curl pipe, Error $ERRNO\n";
 
 	# Processing on the stream is done here
 	my %new_object = %{ process_curl( $curl_pid, $CURL_OUT, $CURL_STDERR ) };
 
 	for ( $CURL_OUT, $CURL_STDIN, $CURL_STDERR ) {
 		if (defined) {
-			close $_ or print {*STDERR} "Could not close curl pipe";
+			close $_ or print {*STDERR} "Could not close curl pipe\n";
 			if ( !defined $new_object{curl_return} ) {
 				$new_object{curl_return} = $CHILD_ERROR >> 8;
 			}
@@ -204,26 +209,26 @@ sub get_url_title {
 	}
 
 	my $curl_return = $new_object{curl_return};
-	print_stderr("Curl return is $curl_return");
+	print {*STDERR} "Curl return is $curl_return\n";
 	if ( $curl_return == 0 ) {
 
 		# Print out $process{is_text} and $title's values
-		print_stderr( "Ended on line $new_object{line_no}  "
-				. 'Is Text: '
-				. "$new_object{is_text}  "
-				. 'End of Header: '
-				. "$new_object{end_of_header}  "
-				. "ssl error: $new_object{ssl_error}" );
+		print {*STDERR} "Ended on line $new_object{line_no}  "
+			. 'Is Text: '
+			. "$new_object{is_text}  "
+			. 'End of Header: '
+			. "$new_object{end_of_header}  "
+			. "ssl error: $new_object{ssl_error}\n";
 
 		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
-		print_stderr( 'Title Start Line: '
-				. "$new_object{title_start_line}  "
-				. 'Title End Line = '
-				. $new_object{title_end_line}
-				. " Lines from title start to end: $title_length" );
+		print {*STDERR} 'Title Start Line: '
+			. "$new_object{title_start_line}  "
+			. 'Title End Line = '
+			. $new_object{title_end_line}
+			. " Lines from title start to end: $title_length\n";
 	}
 	else {
-		print_stderr("There was a problem with curl.  Error code $new_object{curl_return}");
+		print {*STDERR} "There was a problem with curl.  Error code $new_object{curl_return}\n";
 
 	}
 
@@ -237,16 +242,14 @@ sub get_url_title {
 		# Replace carriage returns with two spaces
 		$title =~ s/\r/  /g;
 
-		print_stderr(qq(Title is: "$title"));
+		print {*STDERR} qq(Title is: "$title"\n);
 		$new_object{title} = $title;
 
 	}
 	$new_object{url} = $sub_url;
 
-	#$new_object{title} = $title;
 	$curl_return = $new_object{curl_return};
 	print_stderr("$curl_return");
-	$new_object{curl_return} = \$curl_return;
 
 	return \%new_object;
 }

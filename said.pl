@@ -597,14 +597,13 @@ sub find_url {
 
 		my %url_object = %{ get_url_title_new($find_url_url) };
 
-		my $return_code  = ${ $url_object{curl_return} };
+		my $return_code  = $url_object{curl_return};
 		my $return_tries = 0;
-		my $bad_ssl;
 		my $url_new_location;
 		print_stderr("RETURN CODE IS $return_code");
 
 		if ( $url_object{is_text} && defined $url_object{title} || $url_object{curl_return} != 0 ) {
-			return ( 1, \%url_object, $bad_ssl );
+			return ( 1, \%url_object );
 		}
 		else {
 			print_stderr(q/find_url return, it's not text or no title found/);
@@ -617,7 +616,7 @@ sub find_url {
 }
 
 sub url_format_text {
-	my ( $format_success, $ref, $bad_ssl ) = @_;
+	my ( $format_success, $ref ) = @_;
 	if ( !defined $ref ) {
 		print_stderr('$ref is not defined!!!');
 		return 0;
@@ -689,7 +688,7 @@ sub url_format_text {
 	);
 
 	my $curl_exit_text;
-	my $curl_exit_value = ${ $url_object{curl_return} };
+	my $curl_exit_value = $url_object{curl_return};
 	if ( defined $curl_exit_codes{$curl_exit_value} ) {
 		$curl_exit_text = $curl_exit_codes{$curl_exit_value};
 	}
@@ -700,7 +699,7 @@ sub url_format_text {
 	if ( $curl_exit_value != 0 or $curl_exit_value != 23 ) {
 		$curl_ignore = 1;
 	}
-	if ( defined $bad_ssl && !defined $url_object{title} && !$curl_ignore ) {
+	if ( defined $url_object{bad_ssl} && !defined $url_object{title} && !$curl_ignore ) {
 		msg_same_origin( $who_said, "$url_object{url} . Curl error code: $curl_exit_value $curl_exit_text" );
 	}
 
@@ -730,7 +729,7 @@ sub url_format_text {
 	if ( defined $url_object{new_location} ) {
 		$new_location_text = ' >> ' . text_style( $url_object{new_location}, 'underline', 'blue' );
 	}
-	if ( defined $bad_ssl ) {
+	if ( defined $url_object{bad_ssl} ) {
 		$bad_ssl_text = $SPACE . text_style( 'BAD SSL', 'bold', 'white', 'red' );
 	}
 	$title_text = q([ ) . text_style( $url_object{title}, undef, 'teal' ) . q( ]);

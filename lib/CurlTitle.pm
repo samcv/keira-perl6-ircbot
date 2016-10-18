@@ -29,8 +29,6 @@ sub process_curl {
 	my $title_end_regex   = '</title>.*';
 	my @curl_title;
 
-	#while ( defined( my $curl_line = <$CURL_OUT> ) or defined( my $curl_error_line = <$CURL_STDERR> ) ) {
-
 	while ( defined( my $curl_line = <$CURL_OUT> ) ) {
 
 		# Processing done only within the header
@@ -94,6 +92,7 @@ sub process_curl {
 	my $return = \%process;
 	return \%process;
 }
+
 sub get_url_title_new {
 	my ( $sub_url, $curl_unsafe_ssl, $max_redirects ) = @_;
 	if ( !defined $max_redirects ) { $max_redirects = 3 }
@@ -116,7 +115,7 @@ sub get_url_title_new {
 			%url_object       = %{ get_url_title($url_new_location) };
 		}
 	}
-	my $return_code = $url_object{curl_return};
+	my $return_code  = $url_object{curl_return};
 	my $return_tries = 0;
 	my $bad_ssl;
 	if (   $return_code == 35
@@ -154,10 +153,10 @@ sub get_url_title_new {
 	$url_object{new_location} = $url_new_location;
 	return \%url_object;
 }
+
 sub get_url_title {
 	my ( $sub_url, $curl_unsafe_ssl ) = @_;
 	print {*STDERR} qq/Curl Location: "$sub_url"/;
-
 
 	my $user_agent
 		= 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) '

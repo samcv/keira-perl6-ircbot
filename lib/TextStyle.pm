@@ -7,7 +7,6 @@ use English;
 use Exporter qw(import);
 our @EXPORT_OK = qw(text_style);
 
-
 my %style_table = (
 	bold      => chr 2,
 	italic    => chr 29,

@@ -15,7 +15,7 @@ use Convert::EastAsianWidth;
 use Text::Unidecode;
 use lib qw(./);
 use lib::TextStyle qw(text_style);
-use lib::CurlTitle qw(get_url_title);
+use lib::CurlTitle qw(get_url_title_new);
 use lib::TryDecode qw(try_decode);
 
 binmode STDOUT, ':encoding(UTF-8)'

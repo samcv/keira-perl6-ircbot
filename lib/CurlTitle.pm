@@ -89,7 +89,7 @@ sub process_curl {
 	}
 
 	if (@curl_title) { $process{curl_title} = \@curl_title }
-	my $return = \%process;
+
 	return \%process;
 }
 
@@ -153,7 +153,7 @@ sub get_url_title_new {
 		}
 	}
 	if ($return_tries) {
-		$url_object{curl_return} = \$return_code;
+		$url_object{curl_return} = $return_code;
 	}
 	$url_object{new_location} = $url_new_location;
 	return \%url_object;
@@ -249,7 +249,7 @@ sub get_url_title {
 	$new_object{url} = $sub_url;
 
 	$curl_return = $new_object{curl_return};
-	print_stderr("$curl_return");
+	print {*STDERR} "$curl_return\n";
 
 	return \%new_object;
 }

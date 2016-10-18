@@ -5,8 +5,6 @@ use utf8;
 use feature 'unicode_strings';
 
 use Benchmark qw(:hireswallclock);
-binmode STDOUT, ':encoding(UTF-8)';
-binmode STDERR, ':encoding(UTF-8)';
 
 sub perl_eval {
 	my ($command) = @_;
@@ -37,6 +35,6 @@ sub perl_eval {
 		my $td = timediff( $t1, $t0 );
 		$time_str = timestr($td);
 	}
-	
+
 	return $printBuffer, $userError, $time_str;
 }

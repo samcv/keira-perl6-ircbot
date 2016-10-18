@@ -9,7 +9,6 @@ use feature 'unicode_strings';
 use utf8;
 use English;
 use Time::Seconds;
-use URL::Search 'extract_urls';
 use Convert::EastAsianWidth;
 use Text::Unidecode;
 use lib qw(./);
@@ -577,10 +576,13 @@ sub find_url {
 	my ( $find_url_url, $new_location_text );
 	my $max_title_length = 120;
 	my $error_line       = 0;
-	my @find_url_array   = extract_urls $find_url_caller_text;
-	if ( $find_url_caller_text =~ m{\#\#\s*http.?://} ) {
+	if ( $find_url_caller_text !~ m{https?://} or $find_url_caller_text =~ m{\#\#\s*http.?://} ) {
 		return 0;
 	}
+	require lib::LocateURLs;
+
+	my @find_url_array = locate_urls($find_url_caller_text);
+
 	foreach my $single_url (@find_url_array) {
 
 		# Make sure we don't use FTP
@@ -962,7 +964,8 @@ sub eval_perl {
 		$perl_all_out = 'STDOUT: «' . $perl_stdout . '» ';
 	}
 	if ( defined $perl_stderr ) {
-		$perl_stderr =~ s/isn't numeric in numeric ne .*?eval[.]pl line \d+[.]//g;
+
+		#$perl_stderr =~ s/isn't numeric in numeric ne .*?eval[.]pl line \d+[.]//g;
 		$perl_all_out .= 'STDERR: «' . $perl_stderr . q(»);
 	}
 	if ( defined $test_perl_time ) {
@@ -972,7 +975,7 @@ sub eval_perl {
 		$perl_all_out = to_symbols_newline($perl_all_out);
 		$perl_all_out = to_symbols_ctrl($perl_all_out);
 
-		$perl_all_out = shorten_text( $perl_all_out, 260 );
+		$perl_all_out = shorten_text( $perl_all_out, 255 );
 
 		msg_same_origin( $eval_who, $perl_all_out ) and return 1;
 	}

@@ -2,7 +2,6 @@
 # said perlbot script
 use strict;
 use warnings;
-use IPC::Open3 'open3';
 use Encode;
 use Symbol 'gensym';
 use Encode::Detect;
@@ -15,7 +14,6 @@ use Convert::EastAsianWidth;
 use Text::Unidecode;
 use lib qw(./);
 use lib::TextStyle qw(text_style);
-use lib::CurlTitle qw(get_url_title_new);
 use lib::TryDecode qw(try_decode);
 
 binmode STDOUT, ':encoding(UTF-8)'
@@ -594,6 +592,7 @@ sub find_url {
 	}
 
 	if ( defined $find_url_url ) {
+		require lib::CurlTitle;
 
 		my %url_object = %{ get_url_title_new($find_url_url) };
 
@@ -954,32 +953,20 @@ sub get_fortune {
 
 sub eval_perl {
 	my ( $eval_who, $perl_command ) = @_;
+	require lib::PerlEval;
+	my ( $perl_stdout, $perl_stderr, $test_perl_time ) = perl_eval($perl_command);
+
 	my $perl_all_out;
-	my @perl_args = ( 'eval.pl', $perl_command );
-	my ( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh );
-	$perl_stderr_fh = gensym;
-	my $pid = open3( $perl_stdin_fh, $perl_stdout_fh, $perl_stderr_fh, 'perl', @perl_args )
-		or print_stderr("Could not open eval.pl, Error $ERRNO");
-	my $perl_stdout = do { local $INPUT_RECORD_SEPARATOR = undef; <$perl_stdout_fh> };
-	my $perl_stderr = do { local $INPUT_RECORD_SEPARATOR = undef; <$perl_stderr_fh> };
-
-	waitpid $pid, 0;
-	if ( defined $perl_stdout_fh ) {
-		close $perl_stdout_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
-	}
-	if ( defined $perl_stdout_fh ) {
-		close $perl_stderr_fh or print_stderr("Could not close eval.pl, Error $ERRNO");
-	}
-
 	if ( defined $perl_stdout ) {
 
 		$perl_all_out = 'STDOUT: «' . $perl_stdout . '» ';
 	}
 	if ( defined $perl_stderr ) {
-
-		#$perl_stderr = try_decode($perl_stderr);
 		$perl_stderr =~ s/isn't numeric in numeric ne .*?eval[.]pl line \d+[.]//g;
 		$perl_all_out .= 'STDERR: «' . $perl_stderr . q(»);
+	}
+	if ( defined $test_perl_time ) {
+		$perl_all_out = " Time: $test_perl_time";
 	}
 	if ( defined $perl_all_out ) {
 		$perl_all_out = to_symbols_newline($perl_all_out);

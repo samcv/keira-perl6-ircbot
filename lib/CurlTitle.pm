@@ -38,16 +38,26 @@ sub process_curl {
 			if ( $curl_line =~ /^\s*$/ ) {
 				$process{end_of_header} = 1;
 				if ( $process{is_text} == 0 or defined $process{new_location} ) {
-					print {*STDERR} q/Stopping because it's not text or a new location is defined/;
+					print {*STDERR}
+						q/Stopping because it's not text or a new location is defined/;
 					last;
 				}
 			}
 
 			# Detect content type
-			elsif ( $curl_line =~ /^Content-Type:.*text/i )       { $process{is_text}       = 1 }
-			elsif ( $curl_line =~ /^CF-RAY:/i )                   { $process{is_cloudflare} = 1 }
-			elsif ( $curl_line =~ /^Set-Cookie.*/i )              { $process{has_cookie}++ }
-			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) { $process{new_location}  = $curl_line }
+			elsif ( $curl_line =~ /^Content-Type:/i ) {
+				if ( $curl_line =~ /text/i ) {
+					$process{'is_text'} = 1;
+				}
+				if ( $curl_line =~ m/charset=(\S+)/ ) {
+					$process{'encoding'} = $1;
+				}
+			}
+			elsif ( $curl_line =~ /^CF-RAY:/i ) { $process{is_cloudflare} = 1 }
+			elsif ( $curl_line =~ /^Set-Cookie.*/i ) { $process{has_cookie}++ }
+			elsif ( $curl_line =~ s/^Location:\s*(\S*)\s*$/$1/i ) {
+				$process{new_location} = $curl_line;
+			}
 		}
 
 		# Processing done after the header
@@ -80,7 +90,10 @@ sub process_curl {
 			}
 
 			# If we reach the </head>, <body> have reached the end of title
-			if ( $curl_line =~ m{</head>} or $curl_line =~ m{<body.*?>} or $process{title_end_line} != 0 ) {
+			if (   $curl_line =~ m{</head>}
+				or $curl_line =~ m{<body.*?>}
+				or $process{title_end_line} != 0 )
+			{
 				last;
 			}
 		}
@@ -102,7 +115,7 @@ sub get_url_title_new {
 	my $redirects = 0;
 	while ( defined $url_object{new_location} and $redirects < $max_redirects ) {
 
-		# If the location starts with a / then it is a reference to a url on the same domain
+  # If the location starts with a / then it is a reference to a url on the same domain
 		if ( $url_object{new_location} =~ m{^/} ) {
 			print {*STDERR} "Matched a / in the url new location start\n";
 			my $temp6 = $url_object{url};
@@ -149,7 +162,10 @@ sub get_url_title_new {
 			$return_tries++;
 		}
 		if ( defined $bad_ssl ) {
-			$url_object{bad_ssl} = 'BAD_SSL';
+			$url_object{bad_ssl} = 1;
+		}
+		else {
+			$url_object{bad_ssl} = 0;
 		}
 	}
 	if ($return_tries) {
@@ -177,8 +193,9 @@ sub get_url_title {
 	my $curl_retry_times = 1;
 	my @curl_args;
 	@curl_args = (
-		'--compressed', '-H',          $user_agent, '--retry', $curl_retry_times, '--max-time',
-		$curl_max_time, '--no-buffer', '-i',        '--url',   $sub_url,
+		'--compressed',    '-H',         $user_agent,    '--retry',
+		$curl_retry_times, '--max-time', $curl_max_time, '--no-buffer',
+		'-i',              '--url',      $sub_url,
 	);
 	if ( $curl_unsafe_ssl eq 'UNSAFE_SSL' ) {
 		print {*STDERR} "UNSAFE Setting curl unsafe-ssl to $curl_unsafe_ssl\n";
@@ -187,12 +204,12 @@ sub get_url_title {
 
 	my ( $CURL_STDERR, $CURL_STDIN, $CURL_OUT );
 
-	# If we don't set this sometimes weird things happen and filehandles could get combined
-	# Using open3
-	#$CURL_STDERR = gensym;
+# If we don't set this sometimes weird things happen and filehandles could get combined
+# Using open3
+#$CURL_STDERR = gensym;
 
-	# Don't set BINMODE on curl's output because we will decode later on
-	#my $curl_pid = open3( $CURL_STDIN, $CURL_OUT, $CURL_STDERR, 'curl', @curl_args )
+ # Don't set BINMODE on curl's output because we will decode later on
+ #my $curl_pid = open3( $CURL_STDIN, $CURL_OUT, $CURL_STDERR, 'curl', @curl_args )
 	my $curl_pid = open $CURL_OUT, '-|', 'curl', @curl_args
 		or print {*STDERR} "Could not open curl pipe, Error $ERRNO\n";
 
@@ -217,10 +234,10 @@ sub get_url_title {
 			. 'Is Text: '
 			. "$new_object{is_text}  "
 			. 'End of Header: '
-			. "$new_object{end_of_header}  "
-			. "ssl error: $new_object{ssl_error}\n";
+			. "$new_object{end_of_header}\n";
 
-		my $title_length = $new_object{title_end_line} - $new_object{title_start_line};
+		my $title_length
+			= $new_object{title_end_line} - $new_object{title_start_line};
 		print {*STDERR} 'Title Start Line: '
 			. "$new_object{title_start_line}  "
 			. 'Title End Line = '
@@ -228,13 +245,14 @@ sub get_url_title {
 			. " Lines from title start to end: $title_length\n";
 	}
 	else {
-		print {*STDERR} "There was a problem with curl.  Error code $new_object{curl_return}\n";
+		print {*STDERR}
+			"There was a problem with curl.  Error code $new_object{curl_return}\n";
 
 	}
 
 	if ( !defined $new_object{new_location} && defined $new_object{curl_title} ) {
 		my $title = join q(  ), @{ $new_object{curl_title} };
-		$title = try_decode($title);
+		$title = try_decode( $title, $new_object{'encoding'} );
 
 		# Decode html entities such as &nbsp
 		$title = decode_entities($title);
@@ -242,7 +260,7 @@ sub get_url_title {
 		# Replace carriage returns with two spaces
 		$title =~ s/\r/  /g;
 
-		print {*STDERR} qq(Title is: "$title"\n);
+		print {*STDERR} qq(Title is: ｢$title｣\n);
 		$new_object{title} = $title;
 
 	}
@@ -253,3 +271,91 @@ sub get_url_title {
 
 	return \%new_object;
 }
+
+sub curl_exit_codes {
+	my ($exit_code) = @_;
+	my %curl_exit_codes = (
+		1 =>
+			"CURLE_UNSUPPORTED_PROTOCOL The URL you passed to libcurl used a protocol that this "
+			. "libcurl does not support. The support might be a compile-time option that you "
+			. "didn't use, it can be a misspelled protocol string or just a protocol libcurl "
+			. "has no code for.",
+		2 =>
+			'CURLE_FAILED_INIT Very early initialization code failed. This is likely to be an '
+			. 'internal error or problem, or a resource problem where something fundamental '
+			. "couldn't get done at init time.",
+		3 => 'CURLE_URL_MALFORMAT The URL was not properly formatted.',
+		4 =>
+			'CURLE_NOT_BUILT_IN A requested feature, protocol or option was not found built-in '
+			. 'in this libcurl due to a build-time decision. This means that a feature or option '
+			. 'was not enabled or explicitly disabled when libcurl was built and in order to '
+			. 'get it to function you have to get a rebuilt libcurl.',
+		5 =>
+			"CURLE_COULDNT_RESOLVE_PROXY Couldn't resolve proxy. The given proxy host could "
+			. 'not be resolved.',
+		6 =>
+			"CURLE_COULDNT_RESOLVE_HOST Couldn't resolve host. The given remote host was not resolved.",
+		7 => 'CURLE_COULDNT_CONNECT Failed to connect() to host or proxy.',
+		8 =>
+			"CURLE_FTP_WEIRD_SERVER_REPLY The server sent data libcurl couldn't parse. This "
+			. 'error code is used for more than just FTP',
+		9 =>
+			'CURLE_REMOTE_ACCESS_DENIED We were denied access to the resource given in the URL. '
+			. 'For FTP, this occurs while trying to change to the remote directory.',
+		10 => 'CURLE_FTP_ACCEPT_FAILED',
+		11 => 'CURLE_FTP_WEIRD_PASS_REPLY',
+		12 => 'CURLE_FTP_ACCEPT_TIMEOUT',
+		13 => 'CURLE_FTP_WEIRD_PASV_REPLY',
+		14 => 'CURLE_FTP_WEIRD_227_FORMAT',
+		15 => 'CURLE_FTP_CANT_GET_HOST',
+		16 => 'CURLE_HTTP2',
+		17 => 'CURLE_FTP_COULDNT_SET_TYPE',
+		18 => 'CURLE_PARTIAL_FILE',
+		19 => 'CURLE_FTP_COULDNT_RETR_FILE',
+		21 => 'CURLE_QUOTE_ERROR',
+		22 => 'CURLE_HTTP_RETURNED_ERROR',
+		23 =>
+			"CURLE_WRITE_ERROR An error occurred when writing received data to a local file, or "
+			. 'an error was returned to libcurl from a write callback.',
+		28 =>
+			"CURLE_OPERATION_TIMEDOUT Operation timeout. The specified time-out period was reached according to the conditions.",
+		35 =>
+			'CURLE_SSL_CONNECT_ERROR A problem occurred somewhere in the SSL/TLS handshake. '
+			. "Curl probably doesn't support this type of crypto.",
+		43 =>
+			'CURLE_BAD_FUNCTION_ARGUMENT Internal error. A function was called with a bad parameter.',
+		45 =>
+			"CURLE_INTERFACE_FAILED Interface error. A specified outgoing interface could not be "
+			. "used. Set which interface to use for outgoing connections' source IP address with "
+			. "CURLOPT_INTERFACE.",
+		51 =>
+			"CURLE_PEER_FAILED_VERIFICATION The remote server's SSL certificate or SSH md5 "
+			. "fingerprint was deemed not OK.",
+		53 => "CURLE_SSL_ENGINE_NOTFOUND The specified crypto engine wasn't found.",
+		54 =>
+			'CURLE_SSL_ENGINE_SETFAILED Failed setting the selected SSL crypto engine as default!',
+		58 => 'CURLE_SSL_CERTPROBLEM Problem with the local client certificate.',
+		59 => "CURLE_SSL_CIPHER Couldn't use specified cipher.",
+		60 =>
+			'CURLE_SSL_CACERT Peer certificate cannot be authenticated with known CA certificates.',
+		64 => 'CURLE_USE_SSL_FAILED Requested FTP SSL level failed.',
+		66 => 'CURLE_SSL_ENGINE_INITFAILED Initiating the SSL Engine failed.',
+		77 =>
+			'CURLE_SSL_CACERT_BADFILE Problem with reading the SSL CA cert (path? access rights?)',
+		78 =>
+			'CURLE_REMOTE_FILE_NOT_FOUND The resource referenced in the URL does not exist.',
+		80 => 'CURLE_SSL_SHUTDOWN_FAILED Failed to shut down the SSL connection.',
+		82 => 'CURLE_SSL_CRL_BADFILE Failed to load CRL file.',
+		83 => 'CURLE_SSL_ISSUER_ERROR Issuer check failed.',
+		90 =>
+			'CURLE_SSL_PINNEDPUBKEYNOTMATCH Failed to match the pinned key specified with '
+			. 'CURLOPT_PINNEDPUBLICKEY.',
+		91 => 'CURLE_SSL_INVALIDCERTSTATUS Status returned failure when asked with '
+			. 'CURLOPT_SSL_VERIFYSTATUS . ',
+	);
+	if ( defined $curl_exit_codes{$exit_code} ) {
+		return $curl_exit_codes{$exit_code};
+	}
+	return;
+}
+1;

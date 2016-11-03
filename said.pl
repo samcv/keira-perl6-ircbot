@@ -1,18 +1,19 @@
 #!/usr/bin/env perl
 # said perlbot script
+use 5.012;
 use strict;
 use warnings;
 use Encode;
 use Symbol 'gensym';
 use Encode::Detect;
 use feature 'unicode_strings';
-use utf8;
+use utf8 qw(decode);
 use English;
-use Time::Seconds;
-use Convert::EastAsianWidth;
-use Text::Unidecode;
+use Time::Seconds qw(ONE_MINUTE ONE_HOUR ONE_DAY ONE_YEAR);
+use Convert::EastAsianWidth qw(to_fullwidth);
+use Text::Unidecode qw(unidecode);
 use lib qw(./);
-use lib::TextStyle qw(text_style);
+use lib::TextStyle qw(text_style style_table);
 use lib::TryDecode qw(try_decode);
 
 binmode STDOUT, ':encoding(UTF-8)'
@@ -20,84 +21,63 @@ binmode STDOUT, ':encoding(UTF-8)'
 binmode STDERR, ':encoding(UTF-8)'
 	or print_stderr("Failed to set binmode on STDERR, Error $ERRNO");
 
-our $VERSION = 0.5;
+our $VERSION = 0.7;
 my $repo_url = 'https://gitlab.com/samcv/perlbot';
-my ( $who_said, $body, $bot_username, $channel ) = @ARGV;
+my $repo_formatted = text_style( $repo_url, 'underline', 'blue' );
 
 my ( $history_file, $tell_file, $channel_event_file );
-my $history_file_length = 20;
+my $history_file_length = 30;
 
 my $help_text
-	= 'Supports s/before/after (sed), !tell, and responds to .bots with bot info and '
-	. 'repo url. !u to get unicode hex codepoints for a string. !unicode to convert hex '
-	. 'codepoints to unicode. !tohex and !fromhex !transliterate to transliterate most '
-	. 'languages into romazied text. !tell or !tell in 1s/m/h/d to tell somebody a message '
-	. 'triggered on them speaking. !seen to get last spoke/join/part of a user. s/before/after '
-	. 'perl style regex text substitution. !ud to get Urban Dictionary definitions. Also posts '
-	. 'the page title of any website pasted in channel and if you address the bot by name and use '
-	. 'a ? it will answer the question. Supports !perl to evaluate perl code.';
-
-my $welcome_text = "Welcome to the channel $who_said. We're friendly here, read the topic and please be patient.";
+	= 'Supports s/before/after (sed), !tell, !fortune and responds to .bots with bot '
+	. 'info and repo url. !u to get unicode hex codepoints for a string. '
+	. '!unicode to convert hex codepoints to unicode. !tohex and !fromhex '
+	. '!transliterate to transliterate most languages into romazied text. '
+	. '!tell or !tell in 1s/m/h/d to tell somebody a message triggered on them '
+	. 'speaking. !seen to get last spoke/join/part of a user. s/before/after '
+	. 'perl style regex text substitution. !ud to get Urban Dictionary '
+	. 'definitions. Also posts the page title of any website pasted in channel '
+	. 'and if you address the bot by name and use a ? it will answer the '
+	. 'question. Supports !perl to evaluate perl code. !rev or !reverse to '
+	. 'reverse text. !frombin to convert from binary to hex.'
+	. "  For more info go to $repo_formatted";
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell them"';
 my $EMPTY             = q{};
 my $SPACE             = q{ };
 
-my %style_table = (
-	bold      => chr 2,
-	italic    => chr 29,
-	underline => chr 31,
-	reset     => chr 15,
-	reverse   => chr 22,
-	color     => chr 3,
-
+my %ctrl_codes = (
+	'NULL' => chr 0,
+	'A'    => chr 1,
+	'B'    => chr 2,
+	'C'    => chr 3,
+	'D'    => chr 4,
+	'E'    => chr 5,
+	'F'    => chr 6,
+	'G'    => chr 7,
+	'H'    => chr 8,
+	'I'    => chr 9,
+	'J'    => chr 10,
+	'K'    => chr 11,
+	'L'    => chr 12,
+	'M'    => chr 13,
+	'N'    => chr 14,
+	'O'    => chr 15,
+	'P'    => chr 16,
+	'Q'    => chr 17,
+	'R'    => chr 18,
+	'S'    => chr 19,
+	'T'    => chr 20,
+	'U'    => chr 21,
+	'V'    => chr 22,
+	'W'    => chr 23,
+	'X'    => chr 24,
+	'Y'    => chr 25,
+	'Z'    => chr 26,
+	'ESC'  => chr 27,
+	'DEL'  => chr 127,
 );
-
-my %control_codes = (
-	NULL => chr 0,
-	A    => chr 1,
-	B    => chr 2,
-	C    => chr 3,
-	D    => chr 4,
-	E    => chr 5,
-	F    => chr 6,
-	G    => chr 7,
-	H    => chr 8,
-	I    => chr 9,
-	J    => chr 10,
-	K    => chr 11,
-	L    => chr 12,
-	M    => chr 13,
-	N    => chr 14,
-	O    => chr 15,
-	P    => chr 16,
-	Q    => chr 17,
-	R    => chr 18,
-	S    => chr 19,
-	T    => chr 20,
-	U    => chr 21,
-	V    => chr 22,
-	W    => chr 23,
-	X    => chr 24,
-	Y    => chr 25,
-	Z    => chr 26,
-	DEL  => chr 127,
-);
-
-my $said_time = time;
-
-if ( !defined $body || !defined $who_said ) {
-	print_stderr(q/Did not receive any input/);
-	print_stderr(q/Usage: said.pl nickname "text" bot_username channel/);
-	exit 1;
-}
-else {
-	utf8::decode($who_said);
-	utf8::decode($body);
-	if ( defined $channel ) { utf8::decode($channel) }
-	print_stderr("body: '$body'");
-}
 
 sub print_stderr {
 	my ( $error_text, $error_level ) = @_;
@@ -129,14 +109,9 @@ sub private_message {
 }
 
 sub msg_same_origin {
-	my ( $so_msg_who, $so_msg_text ) = @_;
+	my ( $so_msg_who, $so_msg_text, $channel ) = @_;
 	if ( !defined $so_msg_text || $so_msg_text eq $EMPTY ) {
 		print_stderr('Not defined or empty message in msg_same_origin');
-		return 0;
-	}
-	if ( !defined $so_msg_who || $so_msg_who eq $EMPTY ) {
-		print_stderr('Did not receive $so_msg_who, falling back to $who_said by private message');
-		private_message( $who_said, $so_msg_text );
 		return 0;
 	}
 	if ( defined $channel ) {
@@ -155,6 +130,7 @@ sub msg_same_origin {
 }
 
 sub write_to_history {
+	my ( $who_said, $body ) = @_;
 
 	# Add line to history file
 	open my $history_fh, '>>', "$history_file"
@@ -164,7 +140,8 @@ sub write_to_history {
 
 	print {$history_fh} "<$who_said> $body\n"
 		or print_stderr("Failed to append to $history_file, Error $ERRNO");
-	close $history_fh or print_stderr("Could not close $history_file, Error $ERRNO");
+	close $history_fh
+		or print_stderr("Could not close $history_file, Error $ERRNO");
 	return;
 }
 
@@ -180,6 +157,7 @@ sub var_ne {
 }
 
 sub username_defined_pre {
+	my ( $who_said, $body, $channel, $bot_username ) = @_;
 	$history_file       = $bot_username . '_history.txt';
 	$tell_file          = $bot_username . '_tell.txt';
 	$channel_event_file = $bot_username . '_event.txt';
@@ -187,7 +165,7 @@ sub username_defined_pre {
 	$history_file_length = 20;
 	utf8::decode($bot_username);
 
-	if ( var_ne( $channel, 'msg' ) ) { write_to_history() }
+	if ( var_ne( $channel, 'msg' ) ) { write_to_history( $who_said, $body ) }
 
 	return;
 }
@@ -200,28 +178,21 @@ sub format_action {
 
 }
 
-sub from_hex {
-	my ( $from_hex_who, $from_hex_said ) = @_;
-	$from_hex_said =~ s/0x//g;
-	my @decimals = split $SPACE, $from_hex_said;
-	my $hex_string;
-	foreach my $decimal (@decimals) {
-		$hex_string .= hex($decimal) . $SPACE;
+sub from_binary {
+	my ( $bin_who, $bin_said ) = @_;
+	my @hexes = split $SPACE, $bin_said;
+	my $dec_string;
+	foreach my $hex (@hexes) {
+		$dec_string .= sprintf( '%X', oct("0b$hex") ) . $SPACE;
 	}
-	msg_same_origin( $from_hex_who, $hex_string ) and return 1;
+	msg_same_origin( $bin_who, $dec_string ) and return 1;
 	return 0;
 }
 
-sub to_hex {
-	my ( $to_hex_who, $to_hex_said ) = @_;
-	my @hexes = split $SPACE, $to_hex_said;
-	my $dec_string;
-	foreach my $hex (@hexes) {
-		$dec_string .= sprintf '%x ', $hex;
-	}
-	$dec_string = uc $dec_string;
-	msg_same_origin( $to_hex_who, $dec_string ) and return 1;
-	return 0;
+sub reverse {
+	my ( $rev_who, $rev_said ) = @_;
+	$rev_said = reverse $rev_said;
+	msg_same_origin( $rev_who, $rev_said );
 }
 
 sub lowercase {
@@ -265,8 +236,10 @@ sub seen_nick {
 	binmode $event_read_fh, ':encoding(UTF-8)'
 		or print_stderr("Failed to set binmode on event_read_fh, Error $ERRNO");
 	my @event_array = <$event_read_fh>;
-	close $event_read_fh or print_stderr("Could not close seen file, Error $ERRNO");
+	close $event_read_fh
+		or print_stderr("Could not close seen file, Error $ERRNO");
 	my %event_data;
+
 	foreach my $line (@event_array) {
 		chomp $line;
 		my %event_file_data;
@@ -279,7 +252,7 @@ sub seen_nick {
 		}
 
 		# If the nick matches we need to save the data
-		if ( $nick =~ /^$event_file_data{who}?.?/i ) {
+		if ( $nick =~ /^\Q$event_file_data{who}\E?.?$/i ) {
 			$is_in_file = 1;
 			%event_data = %event_file_data;
 		}
@@ -288,15 +261,21 @@ sub seen_nick {
 		$return_string = $event_data{who};
 
 		my %text_strings = (
-			chanjoin => ' Last joined: ',
-			chanpart => ' Last parted/quit: ',
-			chansaid => ' Last spoke: ',
+			'chanjoin' => ' Last joined: ',
+			'chanpart' => ' Last parted/quit: ',
+			'chansaid' => ' Last spoke: ',
 		);
 
-		# Sort by most recent event and add each formatted line to the return string.
-		foreach my $chan_event ( reverse sort { $event_data{$a} <=> $event_data{$b} } keys %event_data ) {
+		# Sort by most recent event and add each formatted line to the return
+		# string.
+		foreach my $chan_event (
+			reverse sort { $event_data{$a} <=> $event_data{$b} }
+			keys %event_data
+			)
+		{
 			if ( $event_data{$chan_event} != 0 ) {
-				$return_string .= $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
+				$return_string
+					.= $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
 			}
 		}
 		msg_same_origin( $seen_who_said, $return_string ) and return 1;
@@ -335,7 +314,8 @@ sub format_time {
 	my $tell_return;
 	my $tell_time_diff = $format_time_now - $format_time_arg;
 
-	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years ) = convert_from_secs($tell_time_diff);
+	my ( $tell_secs, $tell_mins, $tell_hours, $tell_days, $tell_years )
+		= convert_from_secs($tell_time_diff);
 	$tell_return = '[';
 	if ( defined $tell_years ) {
 		$tell_return .= $tell_years . 'y ';
@@ -370,14 +350,26 @@ sub process_tell_nick {
 			$who_told     = $3;
 			$who_to_tell  = $4;
 			$what_to_tell = $5;
+			chomp $what_to_tell;
 		}
-
+		print_stderr(
+			"time told $1 time to tell $2 who told $3 who to tell: $who_to_tell what: $what_to_tell");
+		my $said_time = time;
 		if (  !$has_been_said
 			&& $time_to_tell < $said_time
-			&& $tell_who_spoke =~ /$who_to_tell/i )
+			&& $tell_who_spoke =~ /\Q$who_to_tell\E/i )
 		{
-			$tell_return   = "<$who_told> >$who_to_tell< $what_to_tell " . format_time($time_told);
+			$tell_return
+				= "$who_to_tell,"
+				. $SPACE
+				. text_style( "$who_told said:", 'bold', 'blue' )
+				. $SPACE
+				. $what_to_tell
+
+				#. style_table('reset')
+				. $SPACE . text_style( format_time($time_told), undef, 'teal' );
 			$has_been_said = 1;
+			print_stderr("TELLRETURN'''$tell_return'''");
 		}
 		else {
 			print {$tell_write_fh} "$tell_line\n";
@@ -398,7 +390,8 @@ sub tell_nick {
 	binmode $tell_read_fh, ':encoding(UTF-8)'
 		or print_stderr("Failed to set binmode on tell_read_fh, Error, $ERRNO");
 	my @tell_lines = <$tell_read_fh>;
-	close $tell_read_fh or print_stderr("Could not close $tell_file, Error $ERRNO");
+	close $tell_read_fh
+		or print_stderr("Could not close $tell_file, Error $ERRNO");
 
 	# Write
 	open my $tell_write_fh, '>', "$tell_file"
@@ -407,7 +400,8 @@ sub tell_nick {
 		or print_stderr("Failed to set binmode on tell_fh, Error $ERRNO");
 	my $tell_return = process_tell_nick( $tell_write_fh, $tell_who_spoke, @tell_lines );
 
-	close $tell_write_fh or print_stderr("Could not close tell_fh, Error $ERRNO");
+	close $tell_write_fh
+		or print_stderr("Could not close tell_fh, Error $ERRNO");
 	if ( defined $tell_return ) {
 		return $tell_return;
 	}
@@ -425,16 +419,17 @@ sub transliterate {
 }
 
 sub tell_nick_command {
-	my ( $tell_who_spoke, $tell_nick_body ) = @_;
+	my ( $tell_who_spoke, $tell_nick_body, $channel, $bot_username ) = @_;
+	print_stderr("who: $tell_who_spoke body $tell_nick_body chan $channel");
 	chomp $tell_nick_body;
 	my $tell_remind_time         = 0;
 	my $tell_nick_command_return = 0;
-
-	if ( $body !~ /^\S+ \S+/ or $body =~ /^help/ ) {
-		msg_same_origin( $who_said, $tell_help_text ) and return 1;
+	my $said_time                = time;
+	if ( $tell_nick_body !~ /^\S+ \S+/ or $tell_nick_body =~ /^help/ ) {
+		msg_same_origin( $tell_who_spoke, $tell_help_text ) and return 1;
 	}
-	elsif ( $body =~ /^in/ and $body !~ /^in \d+[smhd] / ) {
-		msg_same_origin( $who_said, $tell_in_help_text ) and return 1;
+	elsif ( $tell_nick_body =~ /^in/ and $tell_nick_body !~ /^in \d+[smhd] / ) {
+		msg_same_origin( $tell_who_spoke, $tell_in_help_text ) and return 1;
 	}
 	else {
 		my $tell_who         = $tell_nick_body;
@@ -467,10 +462,11 @@ sub tell_nick_command {
 			$tell_who =~ s/^(\S+) .*/$1/;
 			$tell_text =~ s/^\S+ (.*)/$1/;
 		}
-		print_stderr( "tell_nick_time_called: $said_time tell_remind_time: $tell_remind_time "
-				. "tell_who: $tell_who tell_text: $tell_text" );
+		print_stderr( "tell_nick_time_called: $said_time tell_remind_time: "
+				. "$tell_remind_time tell_who: $tell_who tell_text: $tell_text" );
 
-		open my $tell_fh, '>>', "$tell_file" or print_stderr("Could not open $tell_file, Error $ERRNO");
+		open my $tell_fh, '>>', "$tell_file"
+			or print_stderr("Could not open $tell_file, Error $ERRNO");
 		binmode $tell_fh, ':encoding(UTF-8)'
 			or print_stderr("Failed to set binmode on tell_fh, Error, $ERRNO");
 		if ( print {$tell_fh} "$said_time $tell_remind_time <$tell_who_spoke> >$tell_who< $tell_text\n" ) {
@@ -480,7 +476,8 @@ sub tell_nick_command {
 		else {
 			print_stderr("Failed to append to $tell_file, Error $ERRNO");
 		}
-		close $tell_fh or print_stderr("Could not close $tell_file, Error $ERRNO");
+		close $tell_fh
+			or print_stderr("Could not close $tell_file, Error $ERRNO");
 	}
 	return $tell_nick_command_return;
 }
@@ -499,7 +496,7 @@ sub process_sed_replace {
 		my $replaced_said_temp = $history_said;
 
 		if (    $replaced_said_temp =~ m{$before_re}
-			and $history_said !~ m{^s/}
+			and $history_said !~ m{^s/}i
 			and $history_said !~ m{^!} )
 		{
 			if ($global) {
@@ -521,7 +518,7 @@ sub process_sed_replace {
 sub sed_replace {
 	my ($sed_called_text) = @_;
 	my ( $before, $after );
-	if ( $sed_called_text =~ m{^s/(.+?)/(.*)} ) {
+	if ( $sed_called_text =~ m{^s/(.+?)/(.*)}i ) {
 		$before = $1;
 		$after  = $2;
 	}
@@ -553,7 +550,8 @@ sub sed_replace {
 
 		( $replaced_who, $replaced_said ) = process_sed_replace( $history_fh, $before_re, $after, $global );
 
-		close $history_fh or print_stderr("Could not close $history_file, Error: $ERRNO");
+		close $history_fh
+			or print_stderr("Could not close $history_file, Error: $ERRNO");
 	}
 	else {
 		print_stderr("Could not open $history_file for read");
@@ -566,7 +564,8 @@ sub sed_replace {
 		binmode $history_fh, ':encoding(UTF-8)'
 			or print_stderr( 'Failed to set binmode on $history_fh, Error' . "$ERRNO" );
 		print {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
-		close $history_fh or print_stderr("Could not close $history_file, Error: $ERRNO");
+		close $history_fh
+			or print_stderr("Could not close $history_file, Error: $ERRNO");
 		return $replaced_who, $replaced_said;
 	}
 }
@@ -576,7 +575,9 @@ sub find_url {
 	my ( $find_url_url, $new_location_text );
 	my $max_title_length = 120;
 	my $error_line       = 0;
-	if ( $find_url_caller_text !~ m{https?://} or $find_url_caller_text =~ m{\#\#\s*http.?://} ) {
+	if (   $find_url_caller_text !~ m{https?://}
+		or $find_url_caller_text =~ m{\#\#\s*http.?://} )
+	{
 		return 0;
 	}
 	require lib::LocateURLs;
@@ -603,13 +604,8 @@ sub find_url {
 		my $url_new_location;
 		print_stderr("RETURN CODE IS $return_code");
 
-		if ( $url_object{is_text} && defined $url_object{title} || $url_object{curl_return} != 0 ) {
-			return ( 1, \%url_object );
-		}
-		else {
-			print_stderr(q/find_url return, it's not text or no title found/);
-			return 0;
-		}
+		return ( 1, \%url_object );
+
 	}
 	else {
 		return 0;
@@ -617,91 +613,47 @@ sub find_url {
 }
 
 sub url_format_text {
-	my ( $format_success, $ref ) = @_;
+	my ( $format_success, $ref, $who_said, $body, $channel, $bot_username ) = @_;
+	my $real_title = 0;
 	if ( !defined $ref ) {
 		print_stderr('$ref is not defined!!!');
 		return 0;
 	}
 	my %url_object = %{$ref};
-	if ( $format_success != 1 || $url_object{title} =~ /^\s*$/ || !$url_object{is_text} ) {
-		print_stderr("Failed to format succes or title is blank or it's not text");
-		return 0;
+	if ( defined $url_object{'title'} ) {
+		if ( $url_object{'title'} =~ /^\s*$/ ) {
+			print_stderr('URL title is blank');
+		}
+		else {
+			$real_title = 1;
+		}
 	}
-	my %curl_exit_codes = (
-		1 => "CURLE_UNSUPPORTED_PROTOCOL The URL you passed to libcurl used a protocol that this "
-			. "libcurl does not support. The support might be a compile-time option that you "
-			. "didn't use, it can be a misspelled protocol string or just a protocol libcurl "
-			. "has no code for.",
-		2 => 'CURLE_FAILED_INIT Very early initialization code failed. This is likely to be an '
-			. 'internal error or problem, or a resource problem where something fundamental '
-			. "couldn't get done at init time.",
-		3 => 'CURLE_URL_MALFORMAT The URL was not properly formatted.',
-		4 => 'CURLE_NOT_BUILT_IN A requested feature, protocol or option was not found built-in '
-			. 'in this libcurl due to a build-time decision. This means that a feature or option '
-			. 'was not enabled or explicitly disabled when libcurl was built and in order to '
-			. 'get it to function you have to get a rebuilt libcurl.',
-		5 => "CURLE_COULDNT_RESOLVE_PROXY Couldn't resolve proxy. The given proxy host could "
-			. 'not be resolved.',
-		6 => "CURLE_COULDNT_RESOLVE_HOST Couldn't resolve host. The given remote host was not resolved.",
-		7 => 'CURLE_COULDNT_CONNECT Failed to connect() to host or proxy.',
-		8 => "CURLE_FTP_WEIRD_SERVER_REPLY The server sent data libcurl couldn't parse. This "
-			. 'error code is used for more than just FTP',
-		9 => 'CURLE_REMOTE_ACCESS_DENIED We were denied access to the resource given in the URL. '
-			. 'For FTP, this occurs while trying to change to the remote directory.',
-		10 => 'CURLE_FTP_ACCEPT_FAILED',
-		11 => 'CURLE_FTP_WEIRD_PASS_REPLY',
-		12 => 'CURLE_FTP_ACCEPT_TIMEOUT',
-		13 => 'CURLE_FTP_WEIRD_PASV_REPLY',
-		14 => 'CURLE_FTP_WEIRD_227_FORMAT',
-		15 => 'CURLE_FTP_CANT_GET_HOST',
-		16 => 'CURLE_HTTP2',
-		17 => 'CURLE_FTP_COULDNT_SET_TYPE',
-		18 => 'CURLE_PARTIAL_FILE',
-		19 => 'CURLE_FTP_COULDNT_RETR_FILE',
-		21 => 'CURLE_QUOTE_ERROR',
-		22 => 'CURLE_HTTP_RETURNED_ERROR',
-		23 => "CURLE_WRITE_ERROR An error occurred when writing received data to a local file, or "
-			. 'an error was returned to libcurl from a write callback.',
-		35 => 'CURLE_SSL_CONNECT_ERROR A problem occurred somewhere in the SSL/TLS handshake. '
-			. "Curl probably doesn't support this type of crypto.",
-		43 => 'CURLE_BAD_FUNCTION_ARGUMENT Internal error. A function was called with a bad parameter.',
-		45 => "CURLE_INTERFACE_FAILED Interface error. A specified outgoing interface could not be "
-			. "used. Set which interface to use for outgoing connections' source IP address with "
-			. "CURLOPT_INTERFACE.",
-		51 => "CURLE_PEER_FAILED_VERIFICATION The remote server's SSL certificate or SSH md5 "
-			. "fingerprint was deemed not OK.",
-		53 => "CURLE_SSL_ENGINE_NOTFOUND The specified crypto engine wasn't found.",
-		54 => 'CURLE_SSL_ENGINE_SETFAILED Failed setting the selected SSL crypto engine as default!',
-		58 => 'CURLE_SSL_CERTPROBLEM Problem with the local client certificate.',
-		59 => "CURLE_SSL_CIPHER Couldn't use specified cipher.",
-		60 => 'CURLE_SSL_CACERT Peer certificate cannot be authenticated with known CA certificates.',
-		64 => 'CURLE_USE_SSL_FAILED Requested FTP SSL level failed.',
-		66 => 'CURLE_SSL_ENGINE_INITFAILED Initiating the SSL Engine failed.',
-		77 => 'CURLE_SSL_CACERT_BADFILE Problem with reading the SSL CA cert (path? access rights?)',
-		78 => 'CURLE_REMOTE_FILE_NOT_FOUND The resource referenced in the URL does not exist.',
-		80 => 'CURLE_SSL_SHUTDOWN_FAILED Failed to shut down the SSL connection.',
-		82 => 'CURLE_SSL_CRL_BADFILE Failed to load CRL file.',
-		83 => 'CURLE_SSL_ISSUER_ERROR Issuer check failed.',
-		90 => 'CURLE_SSL_PINNEDPUBKEYNOTMATCH Failed to match the pinned key specified with '
-			. 'CURLOPT_PINNEDPUBLICKEY.',
-		91 => 'CURLE_SSL_INVALIDCERTSTATUS Status returned failure when asked with '
-			. 'CURLOPT_SSL_VERIFYSTATUS . ',
-	);
-
+	else {
+		print_stderr('URL title is not defined');
+	}
+	if ( !$url_object{'is_text'} ) {
+		print_stderr("Curl response isn't text");
+	}
 	my $curl_exit_text;
 	my $curl_exit_value = $url_object{curl_return};
-	if ( defined $curl_exit_codes{$curl_exit_value} ) {
-		$curl_exit_text = $curl_exit_codes{$curl_exit_value};
+	if ( defined curl_exit_codes($curl_exit_value) ) {
+		$curl_exit_text = curl_exit_codes($curl_exit_value);
 	}
 	if ( !defined $curl_exit_value ) {
 		return 0;
 	}
-	my $curl_ignore = 0;
-	if ( $curl_exit_value != 0 or $curl_exit_value != 23 ) {
-		$curl_ignore = 1;
+	my $curl_think_error = 0;
+	if ( $curl_exit_value != 0 and $curl_exit_value != 23 ) {
+		$curl_think_error = 1;
+		print_stderr("Curl exit value is $curl_exit_value this is an error");
 	}
-	if ( defined $url_object{bad_ssl} && !defined $url_object{title} && !$curl_ignore ) {
-		msg_same_origin( $who_said, "$url_object{url} . Curl error code: $curl_exit_value $curl_exit_text" );
+	if ($curl_think_error) {
+		msg_same_origin( $who_said,
+			"$url_object{url} . Curl error code: $curl_exit_value $curl_exit_text" );
+	}
+	if ( !$real_title ) {
+		print_stderr("No title, so not printing any title");
+		return 0;
 	}
 
 	print_stderr("CURL return $curl_exit_value");
@@ -712,29 +664,51 @@ sub url_format_text {
 	my $new_location_text = $EMPTY;
 	my $title_text;
 	my $max_title_length = 120;
+	my $twitter_re       = 'twitter[.]com/.+/status';
 
-	if ( $url_object{is_cloudflare} ) {
-		$cloudflare_text = $SPACE . text_style( 'CloudFlare ⛅', 'bold', 'orange' );
+	# Title
+	if ( $url_object{url} =~ m{$twitter_re} ) {
+		print_stderr('match');
+		my $tweet_title = $url_object{title};
+		$tweet_title =~ s{(https?://\S+)(")}{$1 $2}g;
+		print_stderr $tweet_title;
+		$url_object{title} = $tweet_title;
 	}
+	$title_text = q([ ) . text_style( $url_object{title}, undef, 'teal' ) . q( ]);
+	$title_text = text_style( $title_text, 'bold' );
+	if (    $url_object{url} !~ m{twitter[.]com/.+/status}
+		and $url_object{url} !~ m{reddit[.]com/} )
+	{
+		$url_object{title}
+			= shorten_text( $url_object{title}, $max_title_length );
+	}
+
+	# New Location
+	if ( defined $url_object{new_location} ) {
+		$new_location_text = ' >> ' . text_style( $url_object{new_location}, 'underline', 'blue' ) . $SPACE;
+	}
+
+	# Cookie
 	if ( $url_object{has_cookie} >= 1 ) {
-		$cookie_text = $SPACE . text_style( '🍪', 'bold', 'brown' );
+		$cookie_text = text_style( '🍪  ', 'bold', 'brown' );
 	}
+
+	# Cloudflare
+	if ( $url_object{is_cloudflare} ) {
+		$cloudflare_text = text_style( 'Cloudflare ⛅ ', 'bold', 'orange' );
+	}
+
+	# 404
 	if ( $url_object{is_404} ) {
 		print_stderr('find_url return, 404 error');
 		return 0;
 	}
-	if ( $url_object{url} !~ m{twitter[.]com/.+/status} and $url_object{url} !~ m{reddit[.]com/} ) {
-		$url_object{title} = shorten_text( $url_object{title}, $max_title_length );
+
+	# Bad SSL
+	if ( $url_object{bad_ssl} ) {
+		$bad_ssl_text = text_style( 'BAD SSL', 'bold', 'white', 'red' );
 	}
 
-	if ( defined $url_object{new_location} ) {
-		$new_location_text = ' >> ' . text_style( $url_object{new_location}, 'underline', 'blue' );
-	}
-	if ( defined $url_object{bad_ssl} ) {
-		$bad_ssl_text = $SPACE . text_style( 'BAD SSL', 'bold', 'white', 'red' );
-	}
-	$title_text = q([ ) . text_style( $url_object{title}, undef, 'teal' ) . q( ]);
-	$title_text = text_style( $title_text, 'bold' );
 	msg_same_origin( $who_said,
 		$title_text . $new_location_text . $cookie_text . $cloudflare_text . $bad_ssl_text )
 		and return 1;
@@ -775,11 +749,11 @@ sub rephrase {
 }
 
 sub bot_coin {
-	my ( $coin_who, $coin_said ) = @_;
+	my ( $coin_who, $coin_said, $channel, $bot_username ) = @_;
 	my $coin       = int rand 2;
 	my $coin_3     = int rand 3;
 	my $thing_said = $coin_said;
-	$thing_said =~ s/^$bot_username\S?\s*//;
+	$thing_said =~ s/^\Q$bot_username\E\S?\s*//;
 	$thing_said =~ s/[?]//g;
 
 	if ( $coin_said =~ /\bor\b/ ) {
@@ -790,7 +764,7 @@ sub bot_coin {
 		}
 		print_stderr("There are $count_or instances of 'or'");
 		if ( $count_or > 2 ) {
-			msg_same_origin( $coin_who, q/I don't support asking more than three things at once... yet/ );
+			msg_same_origin( $coin_who, "I don't support asking more than three things at once... yet" );
 		}
 		elsif ( $count_or == 2 ) {
 			$thing_said =~ m/^\s*(.*)\s*\bor\b\s*(.*)\s*\bor\b\s*(.*)\s*$/;
@@ -823,8 +797,10 @@ sub bot_coin {
 	}
 	else {
 		$thing_said = ucfirst $thing_said;
-		if   ($coin) { msg_same_origin( $coin_who, "$thing_said? Yes." ) and return 1 }
-		else         { msg_same_origin( $coin_who, "$thing_said? No." )  and return 1 }
+		if ($coin) {
+			msg_same_origin( $coin_who, "$thing_said? Yes." ) and return 1;
+		}
+		else { msg_same_origin( $coin_who, "$thing_said? No." ) and return 1 }
 	}
 	return 0;
 }
@@ -843,14 +819,17 @@ sub trunicate_history {
 }
 
 sub username_defined_post {
+	my ( $who_said, $body, $channel, $bot_username ) = @_;
 
 	if ( -f $tell_file ) {
 		print_stderr( localtime(time) . "\tCalling tell_nick" );
 		my ($tell_to_say) = tell_nick($who_said);
 		if ( defined $tell_to_say ) {
 			print_stderr('Tell to say line next');
+			print_stderr("'''$tell_to_say''' TELL TO SAY");
 			msg_same_origin( $who_said, $tell_to_say );
-			url_format_text( find_url($tell_to_say) );
+			my ( $one, $two ) = find_url($tell_to_say);
+			url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
 
 		}
 	}
@@ -864,9 +843,18 @@ sub username_defined_post {
 
 sub sanitize {
 	my ($dirty_string) = @_;
-	$dirty_string =~ tr/\000-\032/ /;
-	$dirty_string =~ s/$control_codes{DEL}//;
-	$dirty_string =~ s/ +/ /g;
+
+	# Chars from 0 to 32 are control codes. Remove all except
+	# newlines and carriage returns
+	$dirty_string
+		=~ s/[$ctrl_codes{NULL}-$ctrl_codes{I}$ctrl_codes{K}$ctrl_codes{L}$ctrl_codes{N}-$ctrl_codes{ESC}]//g;
+
+	#$dirty_string =~ s/[$ctrl_codes{K}-$ctrl_codes{L}]//g;
+
+	$dirty_string =~ s/$ctrl_codes{DEL}//g;
+
+	#$dirty_string =~ s/$ctrl_codes{ESC}//g;
+	#$dirty_string =~ s/ +/ /g;
 	return $dirty_string;
 }
 
@@ -875,6 +863,7 @@ sub replace_newline {
 	$multi_line_string =~ s/\r\n/ /g;
 	$multi_line_string =~ s/\n/ /g;
 	$multi_line_string =~ s/\r/ /g;
+	$multi_line_string =~ s/ +/ /g;
 	return $multi_line_string;
 }
 
@@ -890,15 +879,18 @@ sub to_symbols_newline {
 sub to_symbols_ctrl {
 	my ($multi_line_string) = @_;
 
-	foreach my $ascii ( keys %control_codes ) {
+	foreach my $ascii ( keys %ctrl_codes ) {
 		if ( $ascii eq 'NULL' ) {
-			$multi_line_string =~ s/$control_codes{$ascii}/\\0/g;
+			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\0/g;
 		}
 		elsif ( $ascii eq 'DEL' ) {
-			$multi_line_string =~ s/$control_codes{$ascii}/\\DEL/g;
+			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\DEL/g;
+		}
+		elsif ( $ascii eq 'ESC' ) {
+			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\ESC/g;
 		}
 		else {
-			$multi_line_string =~ s/$control_codes{$ascii}/^$ascii/g;
+			$multi_line_string =~ s/$ctrl_codes{$ascii}/^$ascii/g;
 		}
 	}
 
@@ -923,8 +915,9 @@ sub to_symbols_ctrl {
 sub get_fortune {
 	my ( $fortune_who, $fortune_caller_text ) = @_;
 	my $fortune;
+	my $fortune_max = 350;
 	print_stderr("Fortune caller_text: $fortune_caller_text");
-	my $fortune_cmd = 'fortune -s';
+	my $fortune_cmd = "fortune -n $fortune_max";
 
 	my $fortune_fh;
 	if ( !open $fortune_fh, q(-|), "$fortune_cmd" ) {
@@ -933,14 +926,15 @@ sub get_fortune {
 	}
 	$fortune = do { local $INPUT_RECORD_SEPARATOR = undef; <$fortune_fh> };
 
-	close $fortune_fh or print_stderr( 'Could not close $fortune_fh, Error ' . "$ERRNO" );
+	close $fortune_fh
+		or print_stderr("Could not close fortune_fh, Error $ERRNO");
 
 	$fortune = try_decode($fortune);
 	chomp $fortune;
 	$fortune = sanitize($fortune);
 	$fortune = replace_newline($fortune);
 
-	$fortune = shorten_text( $fortune, 1000 );
+	$fortune = shorten_text( $fortune, 500 );
 
 	# If the fortune isn't empty, return it
 	if ( $fortune !~ /^\s*$/ ) {
@@ -958,6 +952,7 @@ sub eval_perl {
 	require lib::PerlEval;
 	my ( $perl_stdout, $perl_stderr, $test_perl_time ) = perl_eval($perl_command);
 
+	#utf8::decode($perl_stdout);
 	my $perl_all_out;
 	if ( defined $perl_stdout ) {
 
@@ -984,7 +979,8 @@ sub eval_perl {
 
 sub codepoint_to_unicode {
 	my ( $codepoint_who, $unicode_code, $force ) = @_;
-	my $null_byte_msg = 'Null bytes are prohibited on IRC by RFC1459. If you are a terrible '
+	my $null_byte_msg
+		= 'Null bytes are prohibited on IRC by RFC1459. If you are a terrible '
 		. 'person and want to break the spec, use !UNICODE';
 	$unicode_code =~ s/\[u[+](\S+)\]/$1/g;
 	if ( $unicode_code =~ /\b0+\b/ && !$force ) {
@@ -1015,11 +1011,11 @@ sub urban_dictionary {
 	my @ud_args = ( 'ud.pl', $ud_request );
 	my $ud_pid = open my $UD_OUT, '-|', 'perl', @ud_args
 		or print_stderr("Could not open UD pipe, Error $ERRNO");
-	binmode $UD_OUT, ':encoding(UTF-8)'
-		or print_stderr("Failed to set binmode on UD_OUT, Error $ERRNO");
 
-	#my ( $definition, $example );
+	# Don't set binmode on Urban Dictionary requests or not ASCII
+	# Symbols will not be properly decoded
 	my $ud_line = do { local $INPUT_RECORD_SEPARATOR = undef; <$UD_OUT> };
+	$ud_line = try_decode($ud_line);
 	$ud_line = replace_newline($ud_line);
 	if ( $ud_line =~ m{%DEF%(.*)%EXA%(.*)} ) {
 		my $definition = $1;
@@ -1046,10 +1042,13 @@ sub urban_dictionary {
 	}
 	else {
 		print_stderr("Urban Dictionary didn't match regex");
-		msg_same_origin( $ud_who, "No definition found" );
+		msg_same_origin( $ud_who, 'No definition found' );
 	}
 	return 0;
 }
+
+=head1 Get Unicode Hex from Characters
+=cut
 
 sub get_codepoints {
 	my ( $code_who, $to_unpack ) = @_;
@@ -1063,18 +1062,22 @@ sub get_codepoints {
 	return 0;
 }
 
+=head1 Unicode Lookup
+Takes unicode hex and finds the page on fileformat.info
+=cut
+
 sub u_lookup {
 	my ( $u_lookup_who, $u_lookup_code ) = @_;
 	if ( $u_lookup_code =~ m/^(\S+)/ ) {
 		$u_lookup_code = $1;
-		my $url = "https://www.fileformat.info/info/unicode/char/$u_lookup_code/index.htm";
+		my $url = 'https://www.fileformat.info/info/unicode/char/' . $u_lookup_code . '/index.htm';
 		msg_same_origin( $u_lookup_who, $url ) and return 1;
 	}
 	return 0;
 }
 
 sub unicode_lookup {
-	my ( $u_lookup_who, $u_lookup_code ) = @_;
+	my ( $u_lookup_who, $u_lookup_code, $channel, $bot_username ) = @_;
 	if ( $u_lookup_code =~ m/^(\S+)/ ) {
 		$u_lookup_code = $1;
 		my @codepoints = unpack 'U*', $u_lookup_code;
@@ -1082,39 +1085,70 @@ sub unicode_lookup {
 		$str =~ s/\s*(.*\S)\s*/$1/;
 		my $url = "https://www.fileformat.info/info/unicode/char/$str/index.htm";
 		msg_same_origin( $u_lookup_who, $url );
-		url_format_text( find_url($url) );
+		url_format_text( find_url($url), $u_lookup_who, $u_lookup_code, $channel, $bot_username );
 	}
 	return 0;
 }
 
-# MAIN
-if ( defined $bot_username and $bot_username ne $EMPTY ) {
-	username_defined_pre;
-}
+=head1 Convert Formats
+Formats: bin, dec, hex and uni
+Syntax: bin2uni will convert from binary to unicode characters
+=cut
 
-# .bots reporting functionality
-if ( $body =~ /[.]bots.*/ ) {
-	msg_same_origin( $who_said, "$bot_username reporting in! [perl] $repo_url v$VERSION" );
-}
-
-# If the bot is addressed by name, call this function
-if ( $body =~ /$bot_username/ ) {
-	if ( $body =~ /[?]/ ) {
-		bot_coin( $who_said, $body );
+sub do_command {
+	my ( $who_cmd, $what_cmd ) = @_;
+	$who_cmd =~ m/(\S*)2(\S*) (.*)/;
+	my $from       = $1;
+	my $to         = $2;
+	my $to_convert = $3;
+	print_stderr("from: '$from' to: '$to' text: '$to_convert'");
+	my $hex;
+	if ( $from eq 'hex' ) {
+		$hex = $to_convert;
 	}
-	else {
-		addressed( $who_said, $body );
+	elsif ( $from eq 'dec' ) {
+		my @hexes = split $SPACE, $to_convert;
+		my $dec_string;
+		foreach my $hex_val (@hexes) {
+			$dec_string .= sprintf '%x ', $hex_val;
+		}
+		$dec_string = uc $dec_string;
+		$hex        = $dec_string;
 	}
-}
+	elsif ( $from eq 'uni' ) {
 
-# Sed functionality. Only called if the history file is defined
-if ( $body =~ m{^s/.+/}i and defined $history_file and $bot_username ne 'skbot' ) {
-	my ( $sed_who, $sed_text ) = sed_replace($body);
-	$sed_text = shorten_text($sed_text);
+		# uni2hex
+		my @codepoints = unpack 'U*', $to_convert;
 
-	if ( defined $sed_who and defined $sed_text ) {
-		print_stderr("sed_who: $sed_who sed_text: $sed_text");
-		msg_channel("<$sed_who> $sed_text");
+		#print $codepoints[0] . "\n";
+		$hex = sprintf '%x ' x @codepoints, @codepoints;
+
+		#print $hex . "\n";
+		$hex =~ s/ $//;
+		$hex = uc $hex;
+	}
+	if ( $to eq 'hex' ) {
+		print_stderr("Hex out: $hex");
+		return $hex;
+	}
+	elsif ( $to eq 'bin' ) {
+		return;
+	}
+	elsif ( $to eq 'dec' ) {
+		my @decimals = split $SPACE, $hex;
+		my $hex_string;
+		foreach my $decimal (@decimals) {
+			$hex_string .= hex($decimal) . $SPACE;
+		}
+		return $hex_string;
+	}
+	elsif ( $to eq 'uni' ) {
+		my @unicode_array = split $SPACE, $hex;
+		my $unicode_code2;
+		foreach my $u_line (@unicode_array) {
+			$unicode_code2 .= chr hex $u_line;
+		}
+		return $unicode_code2;
 	}
 }
 
@@ -1135,8 +1169,10 @@ sub make_fullwidth {
 	my ( $fw_who, $fw_text ) = @_;
 	my $fullwidth = to_fullwidth($fw_text);
 
-	# Match $style_table{color} aka ^C codes and convert the numbers back if they're part of a color code
-	$fullwidth =~ s/(\N{U+03}\d?\d?\N{U+FF0C}?\d?\d?)/$1 =~  tr{\N{U+FF10}-\N{U+FF19}\N{U+FF0C}}{0-9,}r/e;
+	# Match style_table('color') aka ^C codes and convert the numbers
+	# back if they're part of a color code
+	$fullwidth =~ s/(\N{U+03}\d?\d?\N{U+FF0C}?\d?\d?)/$1
+		=~ tr{\N{U+FF10}-\N{U+FF19}\N{U+FF0C}}{0-9,}r/e;
 
 	msg_same_origin( $fw_who, $fullwidth ) and return 1;
 	return 0;
@@ -1149,35 +1185,111 @@ sub print_help {
 }
 
 my %commands = (
-	transliterate => \&transliterate,
-	tell          => \&tell_nick_command,
-	fullwidth     => \&make_fullwidth,
-	fw            => \&make_fullwidth,
-	fromhex       => \&from_hex,
-	tohex         => \&to_hex,
-	u             => \&get_codepoints,
-	unicodelookup => \&u_lookup,
-	ul            => \&unicode_lookup,
-	uc            => \&uppercase,
-	ucirc         => \&uppercase_irc,
-	lc            => \&lowercase,
-	lcirc         => \&lowercase_irc,
-	perl          => \&eval_perl,
-	p             => \&eval_perl,
-	ud            => \&urban_dictionary,
-	help          => \&print_help,
-	unicode       => \&codepoint_to_unicode,
-	UNICODE       => \&codepoint_to_unicode_force,
-	action        => \&format_action,
+	'transliterate' => \&transliterate,
+	'tell'          => \&tell_nick_command,
+	'fullwidth'     => \&make_fullwidth,
+	'fw'            => \&make_fullwidth,
+	'fromhex'       => \&from_hex,
+	'tohex'         => \&to_hex,
+	'frombin'       => \&from_bin,
+	'reverse'       => \&reverse,
+	'rev'           => \&reverse,
+	'u'             => \&get_codepoints,
+	'unicodelookup' => \&u_lookup,
+	'ul'            => \&unicode_lookup,
+	'uc'            => \&uppercase,
+	'ucirc'         => \&uppercase_irc,
+	'lc'            => \&lowercase,
+	'lcirc'         => \&lowercase_irc,
+	'perl'          => \&eval_perl,
+	'p'             => \&eval_perl,
+	'ud'            => \&urban_dictionary,
+	'help'          => \&print_help,
+	'unicode'       => \&codepoint_to_unicode,
+	'UNICODE'       => \&codepoint_to_unicode_force,
+	'action'        => \&format_action,
 );
-if ( $body =~ /^!/ ) {
-	my ( $get_cmd, $strip_cmd ) = get_cmd($body);
-	if ( defined $commands{$get_cmd} ) {
-		$commands{$get_cmd}( $who_said, $strip_cmd );
+print_stderr("starting format #channel >botusername< <who> message");
+
+while (<>) {
+	if ( !m{(\S+?) >(\S+?)< <(\S+?)> (.*)} ) {
+		if (m{^KILL}) {
+			exit;
+		}
+		print_stderr("Line did not match, you will have lots of errors after this!");
+	}
+	my $channel      = $1;
+	my $bot_username = $2;
+	my $who_said     = $3;
+	my $body         = $4;
+	my $welcome_text = "Welcome to the channel $who_said. We're friendly here, "
+		. 'read the topic and please be patient.';
+	utf8::decode($who_said);
+	utf8::decode($body);
+	if ( defined $channel ) { utf8::decode($channel) }
+	print_stderr("body: '$body'");
+
+	# MAIN
+	if ( defined $bot_username and $bot_username ne $EMPTY ) {
+		username_defined_pre( $who_said, $body, $channel, $bot_username );
+	}
+
+	# .bots reporting functionality
+	if ( $body =~ /[.]bots.*/ ) {
+		msg_same_origin( $who_said, "$bot_username reporting in! [Perl 5+6] $repo_url v$VERSION" );
+	}
+
+	# If the bot is addressed by name, call this function
+	if ( $body =~ /$bot_username/ ) {
+		if ( $body =~ /[?]/ ) {
+			bot_coin( $who_said, $body, $channel, $bot_username );
+		}
+		else {
+			addressed( $who_said, $body );
+		}
+	}
+
+	# Sed functionality. Only called if the history file is defined
+	if (   ( $body =~ m{^s/.+/}i and $bot_username ne 'skbot' )
+		or ( $body =~ m{^S/.+/} and $bot_username eq 'skbot' ) and defined $history_file )
+	{
+		my ( $sed_who, $sed_text ) = sed_replace($body);
+		$sed_text = shorten_text($sed_text);
+		if ( defined $sed_who and defined $sed_text ) {
+			print_stderr("sed_who: $sed_who sed_text: $sed_text");
+			$sed_who = text_style( $sed_who, undef, 'teal' );
+			msg_channel("<$sed_who> $sed_text");
+		}
+	}
+	if ( $body =~ /^!\S+2\S+ / ) {
+		print_stderr('I think this is a convert command');
+		my $temp5 = $body;
+		$temp5 =~ s/^!//;
+		my $convert_out = do_command($temp5);
+		msg_same_origin( $who_said, $convert_out );
+	}
+	elsif ( $body =~ /^!/ ) {
+		my ( $get_cmd, $strip_cmd ) = get_cmd($body);
+		if ( defined $commands{$get_cmd} ) {
+			print_stderr("who: $who_said cmd: $strip_cmd");
+			$commands{$get_cmd}( $who_said, $strip_cmd, $channel, $bot_username );
+		}
+	}
+	else {
+		# Find and get URL's page title
+		my ( $one, $two ) = find_url($body);
+		url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
+	}
+
+	if ( $body =~ /\s:[(]\s*$/ or $body =~ /^\s*:[(]\s*$/ ) {
+		my @cheer = ( q/Turn that frown upside down :)/, q/Cheer up! Don't be so sad!/ );
+		my $cheer_text = $cheer[ rand @cheer ];
+		msg_same_origin( $who_said, "$who_said, $cheer_text" );
+	}
+
+	if ( defined $bot_username and $bot_username ne $EMPTY ) {
+		username_defined_post( $who_said, $body, $channel, $bot_username );
 	}
 }
-else {
-	# Find and get URL's page title
-	url_format_text( find_url($body) );
-}
 
+# vim: ts=4

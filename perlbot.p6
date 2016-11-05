@@ -23,19 +23,19 @@ sub convert-time ( $secs-since-epoch is copy )  {
 	my %time-hash;
 	if $secs-since-epoch >= Secs-Per-Year {
 		%time-hash{'years'} = $secs-since-epoch / Secs-Per-Year;
-		$secs-since-epoch   = $secs-since-epoch - %time-hash{'years'} * Secs-Per-Year;
+		$secs-since-epoch -= %time-hash{'years'} * Secs-Per-Year;
 	}
 	if $secs-since-epoch >= Secs-Per-Day {
 		%time-hash{'days'} = $secs-since-epoch / Secs-Per-Day;
-		$secs-since-epoch  = $secs-since-epoch - %time-hash{'days'} * Secs-Per-Day;
+		$secs-since-epoch  -= %time-hash{'days'} * Secs-Per-Day;
 	}
 	if $secs-since-epoch >= Secs-Per-Hour {
 		%time-hash{'hours'} = $secs-since-epoch / Secs-Per-Hour;
-		$secs-since-epoch   = $secs-since-epoch - %time-hash{'hours'} * Secs-Per-Hour;
+		$secs-since-epoch   -= %time-hash{'hours'} * Secs-Per-Hour;
 	}
 	if $secs-since-epoch >= Secs-Per-Min {
 		%time-hash{'mins'} = $secs-since-epoch / Secs-Per-Min;
-		$secs-since-epoch  = $secs-since-epoch - %time-hash{'mins'} * Secs-Per-Min;
+		$secs-since-epoch  -= %time-hash{'mins'} * Secs-Per-Min;
 	}
 	%time-hash{'secs'} = $secs-since-epoch if $secs-since-epoch > 0;
 	return %time-hash;

@@ -189,7 +189,7 @@ sub from_binary {
 	return 0;
 }
 
-sub reverse {
+sub reverse_text {
 	my ( $rev_who, $rev_said ) = @_;
 	$rev_said = reverse $rev_said;
 	msg_same_origin( $rev_who, $rev_said );
@@ -220,66 +220,6 @@ sub uppercase_irc {
 	my ( $uc_irc_who, $uc_irc_said ) = @_;
 	$uc_irc_said =~ tr/{}|/\[\]\\/;
 	msg_same_origin( $uc_irc_who, uc $uc_irc_said ) and return 1;
-	return 0;
-}
-
-sub seen_nick {
-	my ( $seen_who_said, $seen_cmd ) = @_;
-	my $nick = $seen_cmd;
-	$nick =~ s/^!seen (\S+).*/$1/;
-	my $event_file_exists = 0;
-	my $is_in_file;
-	my $return_string;
-
-	open my $event_read_fh, '<', "$channel_event_file"
-		or print_stderr("Could not open seen file, Error $ERRNO");
-	binmode $event_read_fh, ':encoding(UTF-8)'
-		or print_stderr("Failed to set binmode on event_read_fh, Error $ERRNO");
-	my @event_array = <$event_read_fh>;
-	close $event_read_fh
-		or print_stderr("Could not close seen file, Error $ERRNO");
-	my %event_data;
-
-	foreach my $line (@event_array) {
-		chomp $line;
-		my %event_file_data;
-
-		if ( $line =~ m/^<(\S+?)> (\d+) (\d+) (\d+)/ ) {
-			$event_file_data{who}      = $1;
-			$event_file_data{chansaid} = $2;
-			$event_file_data{chanjoin} = $3;
-			$event_file_data{chanpart} = $4;
-		}
-
-		# If the nick matches we need to save the data
-		if ( $nick =~ /^\Q$event_file_data{who}\E?.?$/i ) {
-			$is_in_file = 1;
-			%event_data = %event_file_data;
-		}
-	}
-	if ( $is_in_file == 1 ) {
-		$return_string = $event_data{who};
-
-		my %text_strings = (
-			'chanjoin' => ' Last joined: ',
-			'chanpart' => ' Last parted/quit: ',
-			'chansaid' => ' Last spoke: ',
-		);
-
-		# Sort by most recent event and add each formatted line to the return
-		# string.
-		foreach my $chan_event (
-			reverse sort { $event_data{$a} <=> $event_data{$b} }
-			keys %event_data
-			)
-		{
-			if ( $event_data{$chan_event} != 0 ) {
-				$return_string
-					.= $text_strings{$chan_event} . format_time( $event_data{$chan_event} );
-			}
-		}
-		msg_same_origin( $seen_who_said, $return_string ) and return 1;
-	}
 	return 0;
 }
 
@@ -352,8 +292,8 @@ sub process_tell_nick {
 			$what_to_tell = $5;
 			chomp $what_to_tell;
 		}
-		print_stderr(
-			"time told $1 time to tell $2 who told $3 who to tell: $who_to_tell what: $what_to_tell");
+
+	#print_stderr("time told $1 time to tell $2 who told $3 who to tell: $who_to_tell what: $what_to_tell");
 		my $said_time = time;
 		if (  !$has_been_said
 			&& $time_to_tell < $said_time
@@ -369,7 +309,8 @@ sub process_tell_nick {
 				#. style_table('reset')
 				. $SPACE . text_style( format_time($time_told), undef, 'teal' );
 			$has_been_said = 1;
-			print_stderr("TELLRETURN'''$tell_return'''");
+
+			#print_stderr("TELLRETURN'''$tell_return'''");
 		}
 		else {
 			print {$tell_write_fh} "$tell_line\n";
@@ -825,8 +766,9 @@ sub username_defined_post {
 		print_stderr( localtime(time) . "\tCalling tell_nick" );
 		my ($tell_to_say) = tell_nick($who_said);
 		if ( defined $tell_to_say ) {
-			print_stderr('Tell to say line next');
-			print_stderr("'''$tell_to_say''' TELL TO SAY");
+
+			#print_stderr('Tell to say line next');
+			#print_stderr("'''$tell_to_say''' TELL TO SAY");
 			msg_same_origin( $who_said, $tell_to_say );
 			my ( $one, $two ) = find_url($tell_to_say);
 			url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
@@ -977,35 +919,6 @@ sub eval_perl {
 	return 0;
 }
 
-sub codepoint_to_unicode {
-	my ( $codepoint_who, $unicode_code, $force ) = @_;
-	my $null_byte_msg
-		= 'Null bytes are prohibited on IRC by RFC1459. If you are a terrible '
-		. 'person and want to break the spec, use !UNICODE';
-	$unicode_code =~ s/\[u[+](\S+)\]/$1/g;
-	if ( $unicode_code =~ /\b0+\b/ && !$force ) {
-		msg_same_origin( $codepoint_who, $null_byte_msg ) and return 1;
-	}
-	else {
-		my @unicode_array = split $SPACE, $unicode_code;
-		my $unicode_code2;
-		foreach my $u_line (@unicode_array) {
-			$unicode_code2 .= chr hex $u_line;
-		}
-
-		$unicode_code2 = to_symbols_newline($unicode_code2);
-
-		msg_same_origin( $codepoint_who, $unicode_code2 ) and return 1;
-	}
-	return 0;
-}
-
-sub codepoint_to_unicode_force {
-	my @__ = @_;
-	codepoint_to_unicode( @__, 1 ) and return 1;
-	return 0;
-}
-
 sub urban_dictionary {
 	my ( $ud_who, $ud_request ) = @_;
 	my @ud_args = ( 'ud.pl', $ud_request );
@@ -1015,7 +928,8 @@ sub urban_dictionary {
 	# Don't set binmode on Urban Dictionary requests or not ASCII
 	# Symbols will not be properly decoded
 	my $ud_line = do { local $INPUT_RECORD_SEPARATOR = undef; <$UD_OUT> };
-	$ud_line = try_decode($ud_line);
+
+	#$ud_line = try_decode($ud_line);
 	$ud_line = replace_newline($ud_line);
 	if ( $ud_line =~ m{%DEF%(.*)%EXA%(.*)} ) {
 		my $definition = $1;
@@ -1180,7 +1094,7 @@ sub make_fullwidth {
 
 sub print_help {
 	my ( $help_who, $help_body ) = @_;
-	private_message( $help_who, $help_text ) and return 1;
+	msg_channel($help_text) and return 1;
 	return 0;
 }
 
@@ -1192,9 +1106,8 @@ my %commands = (
 	'fromhex'       => \&from_hex,
 	'tohex'         => \&to_hex,
 	'frombin'       => \&from_bin,
-	'reverse'       => \&reverse,
-	'rev'           => \&reverse,
-	'u'             => \&get_codepoints,
+	'reverse'       => \&reverse_text,
+	'rev'           => \&reverse_text,
 	'unicodelookup' => \&u_lookup,
 	'ul'            => \&unicode_lookup,
 	'uc'            => \&uppercase,
@@ -1205,8 +1118,6 @@ my %commands = (
 	'p'             => \&eval_perl,
 	'ud'            => \&urban_dictionary,
 	'help'          => \&print_help,
-	'unicode'       => \&codepoint_to_unicode,
-	'UNICODE'       => \&codepoint_to_unicode_force,
 	'action'        => \&format_action,
 );
 print_stderr("starting format #channel >botusername< <who> message");
@@ -1220,6 +1131,7 @@ while (<>) {
 	}
 	my $channel      = $1;
 	my $bot_username = $2;
+	print $bot_username . "\n";
 	my $who_said     = $3;
 	my $body         = $4;
 	my $welcome_text = "Welcome to the channel $who_said. We're friendly here, "

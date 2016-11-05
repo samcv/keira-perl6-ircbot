@@ -17,7 +17,7 @@ constant Secs-Per-Hour = Secs-Per-Min * 60;
 constant Secs-Per-Day = Secs-Per-Hour * 12;
 constant Secs-Per-Year = Secs-Per-Day * 365.25;
 constant Secs-Per-Month = Secs-Per-Year / 12;
-sub convert-time ( $secs-since-epoch is copy )  {
+sub convert-time ( $secs-since-epoch is copy ) is export  {
 	my %time-hash;
 	if $secs-since-epoch >= Secs-Per-Year {
 		%time-hash{'years'} = $secs-since-epoch / Secs-Per-Year;
@@ -39,25 +39,14 @@ sub convert-time ( $secs-since-epoch is copy )  {
 	return %time-hash;
 }
 sub format-time ( $time-since-epoch ) {
+	return if $time-since-epoch == 0;
 	my Str $tell_return;
 	my $tell_time_diff = time - $time-since-epoch;
-
+	return "[Just Now]" if $tell_time_diff < 1;
 	my %time-hash = convert-time($tell_time_diff);
 	$tell_return = '[';
-	if ( %time-hash{'years'} ) {
-		$tell_return ~= %time-hash{'years'} ~ 'y ';
-	}
-	if (  %time-hash{'days'} ) {
-		$tell_return ~= %time-hash{'days'} ~ 'd ';
-	}
-	if (  %time-hash{'hours'} ) {
-		$tell_return ~= %time-hash{'hours'} ~ 'h ';
-	}
-	if ( %time-hash{'mins'} ) {
-		$tell_return ~= %time-hash{'mins'} ~ 'm ';
-	}
-	if ( %time-hash{'secs'} ) {
-		$tell_return ~= %time-hash{'secs'} ~ 's ';
+	for %time-hash.keys -> $key {
+		$tell_return ~= sprintf '%.2f y ', %time-hash{$key};
 	}
 	$tell_return ~= 'ago]';
 	return $tell_return;
@@ -102,9 +91,7 @@ class said2 does IRC::Client::Plugin {
 	method irc-connected ($e) {
 		if ! %chan-event  {
 			say "Trying to load $event-filename";
-			$!channel-event-fh = open $event-filename, :r;
-			%chan-event = from-json($!channel-event-fh.slurp-rest);
-			$!channel-event-fh.close;
+			%chan-event = from-json( slurp $event-filename );
 			say %chan-event;
 		}
 		$.event_file_supply.act( {
@@ -115,14 +102,10 @@ class said2 does IRC::Client::Plugin {
 			my $event-file-bak-io = IO::Path.new($event-filename-bak);
 			my $event-promise = start {
 				say "Trying to update channel event data";
-				my $fh3 = open $event-filename-bak, :w;
-				$fh3.say( to-json( %chan-event) );
-				close $fh3;
-				my $fh-read = open $event-filename-bak, :r;
-				# to-json will throw an exception if it can't process the file
+				spurt $event-filename-bak, to-json( %chan-event );
+				# from-json will throw an exception if it can't process the file
 				# we just wrote
-				to-json($fh-read.slurp-rest);
-				close $fh-read;
+				from-json(slurp $event-filename-bak);
 			}
 			$event-promise.result andthen $event-file-bak-io.copy($event-filename);
 
@@ -137,31 +120,18 @@ class said2 does IRC::Client::Plugin {
 		if $e.text ~~ /^'!seen '(\S+)/ {
 			my $temp_nick = $0;
 			my $seen-time;
-			if %chan-event{$temp_nick}{'spoke'} {
-				$seen-time ~= " Spoke: ";
-				if time - %chan-event{$temp_nick}{'spoke'} > 1 {
-					$seen-time ~= format-time( %chan-event{$temp_nick}{'spoke'} );
+
+			for %chan-event{$temp_nick}.sort.reverse -> $pair {
+				my $second;
+				if $pair.value ~~ Int {
+					$second = format-time($pair.value);
 				}
 				else {
-					$seen-time ~= "[Just now]";
+					$second = $pair.value;
 				}
+				$seen-time ~= ' ' ~ $pair.key.tc ~ ': ' ~ $second;
 			}
-			if %chan-event{$temp_nick}{'join'} {
-				$seen-time ~= " Join: " ~ format-time( %chan-event{$temp_nick}{'join'} );
-			}
-			if %chan-event{$temp_nick}{'part'} {
-				$seen-time ~= " Part: " ~ format-time( %chan-event{$temp_nick}{'join'} );
-				if %chan-event{$temp_nick}{'part-msg'} {
-					$seen-time ~= " msg: ( { %chan-event{$temp_nick}{'part-msg'} } )";
-				}
-			}
-			if %chan-event{$temp_nick}{'quit'} {
-				$seen-time ~= " Quit: " ~ format-time( %chan-event{$temp_nick}{'join'} );
-				if %chan-event{$temp_nick}{'quit-msg'} {
-					$seen-time ~= " msg: ( { %chan-event{$temp_nick}{'quit-msg'} } )";
-				}
-			}
-			$.irc.send: :where($e.channel), :text("Saw $0 $seen-time") if %chan-event{$temp_nick};
+			$.irc.send: :where($e.channel), :text("$0$seen-time") if %chan-event{$temp_nick};
 		}
 		if !$proc.started or $filename.IO.modified > $!said-modified-time or $e.text ~~ /^RESET$/ {
 			note "Starting $filename";

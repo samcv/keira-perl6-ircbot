@@ -12,30 +12,17 @@ for ^6 {
 }
 my ($bot-username, $user-name, $real-name, $server-address, $server_port, $channel) = @*ARGS;
 say "Nick: '$bot-username', Real Name: '$real-name', Server: '$server-address', Port: '$server_port', Channel: '$channel'";
-constant Secs-Per-Min = 60;
-constant Secs-Per-Hour = Secs-Per-Min * 60;
-constant Secs-Per-Day = Secs-Per-Hour * 12;
-constant Secs-Per-Year = Secs-Per-Day * 365.25;
-constant Secs-Per-Month = Secs-Per-Year / 12;
+my %secs-per-unit = 'years' => 15778800, 'months' => 1314900, 'days' => 43200,
+                    'hours' => 3600, 'mins' => 60, 'secs' => 1;
 sub convert-time ( $secs-since-epoch is copy ) is export  {
 	my %time-hash;
-	if $secs-since-epoch >= Secs-Per-Year {
-		%time-hash{'years'} = $secs-since-epoch / Secs-Per-Year;
-		$secs-since-epoch -= %time-hash{'years'} * Secs-Per-Year;
+	for %secs-per-unit.sort(*.value).reverse -> $pair {
+		if $secs-since-epoch >= $pair.value {
+			%time-hash{$pair.key} = $secs-since-epoch / $pair.value;
+			$secs-since-epoch -= %time-hash{$pair.key} * $pair.value;
+			last;
+		}
 	}
-	if $secs-since-epoch >= Secs-Per-Day {
-		%time-hash{'days'} = $secs-since-epoch / Secs-Per-Day;
-		$secs-since-epoch  -= %time-hash{'days'} * Secs-Per-Day;
-	}
-	if $secs-since-epoch >= Secs-Per-Hour {
-		%time-hash{'hours'} = $secs-since-epoch / Secs-Per-Hour;
-		$secs-since-epoch   -= %time-hash{'hours'} * Secs-Per-Hour;
-	}
-	if $secs-since-epoch >= Secs-Per-Min {
-		%time-hash{'mins'} = $secs-since-epoch / Secs-Per-Min;
-		$secs-since-epoch  -= %time-hash{'mins'} * Secs-Per-Min;
-	}
-	%time-hash{'secs'} = $secs-since-epoch if $secs-since-epoch > 0;
 	return %time-hash;
 }
 sub format-time ( $time-since-epoch ) {
@@ -46,7 +33,8 @@ sub format-time ( $time-since-epoch ) {
 	my %time-hash = convert-time($tell_time_diff);
 	$tell_return = '[';
 	for %time-hash.keys -> $key {
-		$tell_return ~= sprintf '%.2f y ', %time-hash{$key};
+		$tell_return ~= sprintf '%.2f', %time-hash{$key};
+		$tell_return ~= $key.chop($key.chars - 1) ~ ' ';
 	}
 	$tell_return ~= 'ago]';
 	return $tell_return;
@@ -123,7 +111,7 @@ class said2 does IRC::Client::Plugin {
 
 			for %chan-event{$temp_nick}.sort.reverse -> $pair {
 				my $second;
-				if $pair.value ~~ Int {
+				if $pair.value ~~ /^\d+$/ {
 					$second = format-time($pair.value);
 				}
 				else {

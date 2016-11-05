@@ -1,8 +1,6 @@
 #!/usr/bin/env perl6
 use IRC::Client;
-use JSON::Tiny;
-my $said_out = Channel.new;
-my $said_in = Channel.new;
+use JSON::Pretty;
 my $filename = 'said.pl';
 my $proc = Proc::Async.new( 'perl', $filename, :w, :r );
 my $promise;
@@ -12,8 +10,8 @@ for ^6 {
 		exit;
 	}
 }
-my ($bot_username, $user_name, $real_name, $server_address, $server_port, $channel) = @*ARGS;
-say "Nick: '$bot_username', Real Name: '$real_name', Server: '$server_address', Port: '$server_port', Channel: '$channel'";
+my ($bot-username, $user-name, $real-name, $server-address, $server_port, $channel) = @*ARGS;
+say "Nick: '$bot-username', Real Name: '$real-name', Server: '$server-address', Port: '$server_port', Channel: '$channel'";
 constant Secs-Per-Min = 60;
 constant Secs-Per-Hour = Secs-Per-Min * 60;
 constant Secs-Per-Day = Secs-Per-Hour * 12;
@@ -67,7 +65,8 @@ sub format-time ( $time-since-epoch ) {
 class said2 does IRC::Client::Plugin {
 	my %chan-event;
 	has IO::Handle $!channel-event-fh;
-	my Str $event_filename = $bot_username ~ '-event.json';
+	my Str $event-filename = $bot-username ~ '-event.json';
+	my Str $event-filename-bak = $event-filename ~ '.bak';
 	has Instant $!said-modified-time;
 	has $.event_file_lock = Lock.new;
 	has Supplier $.event_file_supplier = Supplier.new;
@@ -102,25 +101,31 @@ class said2 does IRC::Client::Plugin {
 	}
 	method irc-connected ($e) {
 		if ! %chan-event  {
-			$!channel-event-fh = open $event_filename, :r;
+			say "Trying to load $event-filename";
+			$!channel-event-fh = open $event-filename, :r;
 			%chan-event = from-json($!channel-event-fh.slurp-rest);
 			$!channel-event-fh.close;
 			say %chan-event;
 		}
 		$.event_file_supply.act( {
-			try {
-				my $fh3 = open $event_filename, :w;
+			# Probably not the best way to do things since this doesn't need to
+			# be put in a 'start' block because of using '.act', but we can check
+			# if the promise was kept (no exceptions) and then if so copy it
+			# over the old event file
+			my $event-file-bak-io = IO::Path.new($event-filename-bak);
+			my $event-promise = start {
+				say "Trying to update channel event data";
+				my $fh3 = open $event-filename-bak, :w;
 				$fh3.say( to-json( %chan-event) );
 				close $fh3;
-				CATCH {
-					say "Problem writing to file: $_";
-					$event_filename ~= (^9).pick;
-					say "Falling back and using $event_filename";
-					my $fh-backup = open $event_filename, :w;
-					$fh-backup.say( to-json( %chan-event) );
-					close $fh-backup;
-				}
+				my $fh-read = open $event-filename-bak, :r;
+				# to-json will throw an exception if it can't process the file
+				# we just wrote
+				to-json($fh-read.slurp-rest);
+				close $fh-read;
 			}
+			$event-promise.result andthen $event-file-bak-io.copy($event-filename);
+
 			say "UPDATED CHANNEL EVENT FILE";
 		} );
 		Nil;
@@ -131,7 +136,16 @@ class said2 does IRC::Client::Plugin {
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
 		if $e.text ~~ /^'!seen '(\S+)/ {
 			my $temp_nick = $0;
-			my $seen-time = " Speak: " ~ format-time( %chan-event{$temp_nick}{'spoke'} );
+			my $seen-time;
+			if %chan-event{$temp_nick}{'spoke'} {
+				$seen-time ~= " Spoke: ";
+				if time - %chan-event{$temp_nick}{'spoke'} > 1 {
+					$seen-time ~= format-time( %chan-event{$temp_nick}{'spoke'} );
+				}
+				else {
+					$seen-time ~= "[Just now]";
+				}
+			}
 			if %chan-event{$temp_nick}{'join'} {
 				$seen-time ~= " Join: " ~ format-time( %chan-event{$temp_nick}{'join'} );
 			}
@@ -147,7 +161,7 @@ class said2 does IRC::Client::Plugin {
 					$seen-time ~= " msg: ( { %chan-event{$temp_nick}{'quit-msg'} } )";
 				}
 			}
-			$.irc.send: :where($e.channel), :text("Saw $0 $seen-time");
+			$.irc.send: :where($e.channel), :text("Saw $0 $seen-time") if %chan-event{$temp_nick};
 		}
 		if !$proc.started or $filename.IO.modified > $!said-modified-time or $e.text ~~ /^RESET$/ {
 			note "Starting $filename";
@@ -175,18 +189,18 @@ class said2 does IRC::Client::Plugin {
 			 } );
 			 $promise = $proc.start;
 		 }
-		$proc.print("$channel >$bot_username\< \<{$e.nick}> {$e.text}\n");
-		say "Trying to write to $filename : {$e.channel} >$bot_username\< \<{$e.nick}> {$e.text}";
+		$proc.print("$channel >$bot-username\< \<{$e.nick}> {$e.text}\n");
+		say "Trying to write to $filename : {$e.channel} >$bot-username\< \<{$e.nick}> {$e.text}";
 		$!event_file_supplier.emit( 1 );
 		Nil;
 	}
 }
 
 my $irc = IRC::Client.new(
-	nick     => $bot_username,
-	userreal => $real_name,
-	username => $user_name,
-	host     => $server_address,
+	nick     => $bot-username,
+	userreal => $real-name,
+	username => $user-name,
+	host     => $server-address,
 	channels => $channel,
 	debug    => True,
 	plugins  => said2.new);

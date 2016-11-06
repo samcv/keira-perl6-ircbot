@@ -45,7 +45,7 @@ sub format-time ( $time-since-epoch ) {
 		}
 	}
 	$tell_return ~= 'ago]';
-	return $tell_return;
+	return irc-text($tell_return, :color<teal> );
 }
 class said2 does IRC::Client::Plugin {
 	my %chan-event;
@@ -119,7 +119,7 @@ class said2 does IRC::Client::Plugin {
 		if $e.text ~~ /^'!seen '(\S+)/ {
 			my $temp_nick = $0;
 			my $seen-time;
-
+			say "matched seen";
 			for %chan-event{$temp_nick}.sort.reverse -> $pair {
 				my $second;
 				if $pair.key eq 'mentioned' {
@@ -131,9 +131,12 @@ class said2 does IRC::Client::Plugin {
 				else {
 					$second = $pair.value;
 				}
-				$seen-time ~= $pair.key.tc ~ ': ' ~ $second ~ ' ';
+				$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
 			}
-			$.irc.send: :where($e.channel), :text("$0 $seen-time") if %chan-event{$temp_nick};
+			if %chan-event{$temp_nick} {
+				irc-style($temp_nick, :color<blue>, :style<bold>);
+				$.irc.send: :where($e.channel), :text("$temp_nick $seen-time");
+			}
 		}
 		elsif $e.text ~~ /^'!mentioned '(\S+)/ {
 			my $temp_nick = $0;

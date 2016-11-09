@@ -1,19 +1,19 @@
 #!/usr/bin/env perl6
+use v6.c;
 use IRC::Client;
 use Terminal::ANSIColor;
 use lib 'lib';
 use Perlbot;
 
-sub MAIN ( $bot-username, $user-name, $real-name, $server-address, $server_port, $channel ) {
-	note "Nick: '$bot-username', Real Name: '$real-name', Server: '$server-address', Port: '$server_port', Channel: '$channel'";
-
+sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-address,
+           Int $server_port, Str $channel, $debug = False ) {
 	my $irc = IRC::Client.new(
 		nick     => $bot-username,
 		userreal => $real-name,
 		username => $user-name,
 		host     => $server-address,
 		channels => $channel,
-		debug    => False,
+		debug    => $debug.Bool,
 		plugins  => said2.new);
 	$irc.run;
 }

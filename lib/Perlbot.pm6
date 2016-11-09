@@ -1,3 +1,4 @@
+use v6.c;
 use IRC::Client;
 use Terminal::ANSIColor;
 use JSON::Fast;
@@ -342,3 +343,4 @@ sub format-time ( $time-since-epoch ) {
 	$tell_return ~= 'ago]';
 	return irc-text($tell_return, :color<teal> );
 }
+# vim: noet

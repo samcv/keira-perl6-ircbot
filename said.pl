@@ -795,36 +795,6 @@ sub get_fortune {
 	return 0;
 }
 
-sub eval_perl {
-	my ( $eval_who, $perl_command ) = @_;
-	require lib::PerlEval;
-	my ( $perl_stdout, $perl_stderr, $test_perl_time ) = perl_eval($perl_command);
-
-	#utf8::decode($perl_stdout);
-	my $perl_all_out;
-	if ( defined $perl_stdout ) {
-
-		$perl_all_out = 'STDOUT: «' . $perl_stdout . '» ';
-	}
-	if ( defined $perl_stderr ) {
-
-		#$perl_stderr =~ s/isn't numeric in numeric ne .*?eval[.]pl line \d+[.]//g;
-		$perl_all_out .= 'STDERR: «' . $perl_stderr . q(»);
-	}
-	if ( defined $test_perl_time ) {
-		$perl_all_out = " Time: $test_perl_time";
-	}
-	if ( defined $perl_all_out ) {
-		$perl_all_out = to_symbols_newline($perl_all_out);
-		$perl_all_out = to_symbols_ctrl($perl_all_out);
-
-		$perl_all_out = shorten_text( $perl_all_out, 255 );
-
-		msg_same_origin( $eval_who, $perl_all_out ) and return 1;
-	}
-	return 0;
-}
-
 sub urban_dictionary {
 	my ( $ud_who, $ud_request ) = @_;
 	my @ud_args = ( 'ud.pl', $ud_request );
@@ -990,9 +960,6 @@ my %commands = (
 	'tell'          => \&tell_nick_command,
 	'fullwidth'     => \&make_fullwidth,
 	'fw'            => \&make_fullwidth,
-	'fromhex'       => \&from_hex,
-	'tohex'         => \&to_hex,
-	'frombin'       => \&from_bin,
 	'reverse'       => \&reverse_text,
 	'rev'           => \&reverse_text,
 	'unicodelookup' => \&u_lookup,
@@ -1001,12 +968,9 @@ my %commands = (
 	'ucirc'         => \&uppercase_irc,
 	'lc'            => \&lowercase,
 	'lcirc'         => \&lowercase_irc,
-
-	#'perl'          => \&eval_perl,
-	#'p'             => \&eval_perl,
-	'ud'     => \&urban_dictionary,
-	'help'   => \&print_help,
-	'action' => \&format_action,
+	'ud'            => \&urban_dictionary,
+	'help'          => \&print_help,
+	'action'        => \&format_action,
 );
 print_stderr("starting format #channel >botusername< <who> message");
 

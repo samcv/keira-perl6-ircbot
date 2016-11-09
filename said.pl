@@ -158,14 +158,10 @@ sub var_ne {
 
 sub username_defined_pre {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
-	$history_file       = $bot_username . '_history.txt';
-	$tell_file          = $bot_username . '_tell.txt';
-	$channel_event_file = $bot_username . '_event.txt';
-
-	$history_file_length = 20;
+	$tell_file = $bot_username . '_tell.txt';
 	utf8::decode($bot_username);
 
-	if ( var_ne( $channel, 'msg' ) ) { write_to_history( $who_said, $body ) }
+	#if ( var_ne( $channel, 'msg' ) ) { write_to_history($who_said, $body) }
 
 	return;
 }
@@ -175,7 +171,6 @@ sub format_action {
 	$action_text = "\cA" . 'ACTION' . $SPACE . $action_text . "\cA";
 	msg_same_origin( $action_who, $action_text ) and return 1;
 	return 0;
-
 }
 
 sub from_binary {
@@ -423,94 +418,6 @@ sub tell_nick_command {
 	return $tell_nick_command_return;
 }
 
-sub process_sed_replace {
-	my ( $history_fh, $before_re, $after, $global ) = @_;
-
-	my ( $replaced_who, $replaced_said );
-
-	while ( defined( my $history_line = <$history_fh> ) ) {
-		chomp $history_line;
-		my $history_who = $history_line;
-		$history_who =~ s{^<(.+?)>.*}{$1};
-		my $history_said = $history_line;
-		$history_said =~ s{^<.+?> }{};
-		my $replaced_said_temp = $history_said;
-
-		if (    $replaced_said_temp =~ m{$before_re}
-			and $history_said !~ m{^s/}i
-			and $history_said !~ m{^!} )
-		{
-			if ($global) {
-				$replaced_said_temp =~ s{$before_re}{$after}g;
-			}
-			else {
-				$replaced_said_temp =~ s{$before_re}{$after}i;
-			}
-			if ( $history_said ne $replaced_said_temp ) {
-				$replaced_said = $replaced_said_temp;
-				$replaced_who  = $history_who;
-			}
-		}
-	}
-	return $replaced_who, $replaced_said;
-
-}
-
-sub sed_replace {
-	my ($sed_called_text) = @_;
-	my ( $before, $after );
-	if ( $sed_called_text =~ m{^s/(.+?)/(.*)}i ) {
-		$before = $1;
-		$after  = $2;
-	}
-	my $before_re = $before;
-	my $global    = 0;
-
-	if ( $after =~ s{/ig$}{} or s{/gi$}{} ) {
-		$before_re = "(i?)$before";
-		$global    = 1;
-	}
-	elsif ( $after =~ s{/i$}{} ) {
-		$before_re = "(?i)$before";
-	}
-	elsif ( $after =~ s{/g$}{} ) {
-		$global = 1;
-	}
-	else {
-		# Remove a trailing slash if it remains
-		$after =~ s{/$}{};
-	}
-
-	print_stderr("Before: $before\tAfter: $after\tRegex: $before_re");
-	my ( $replaced_who, $replaced_said );
-	print_stderr('Trying to open history file');
-	if ( open my $history_fh, '<', "$history_file" ) {
-		print_stderr('Successfully opened history file');
-		binmode $history_fh, ':encoding(UTF-8)'
-			or print_stderr( 'Failed to set binmode on $history_fh, Error' . "$ERRNO" );
-
-		( $replaced_who, $replaced_said ) = process_sed_replace( $history_fh, $before_re, $after, $global );
-
-		close $history_fh
-			or print_stderr("Could not close $history_file, Error: $ERRNO");
-	}
-	else {
-		print_stderr("Could not open $history_file for read");
-	}
-
-	if ( defined $replaced_said && defined $replaced_who ) {
-		print_stderr("replaced_said: $replaced_said replaced_who: $replaced_who");
-		open my $history_fh, '>>', "$history_file"
-			or print_stderr("Could not open $history_file for write");
-		binmode $history_fh, ':encoding(UTF-8)'
-			or print_stderr( 'Failed to set binmode on $history_fh, Error' . "$ERRNO" );
-		print {$history_fh} '<' . $replaced_who . '> ' . $replaced_said . "\n";
-		close $history_fh
-			or print_stderr("Could not close $history_file, Error: $ERRNO");
-		return $replaced_who, $replaced_said;
-	}
-}
-
 sub find_url {
 	my ($find_url_caller_text) = @_;
 	my ( $find_url_url, $new_location_text );
@@ -557,7 +464,8 @@ sub url_format_text {
 	my ( $format_success, $ref, $who_said, $body, $channel, $bot_username ) = @_;
 	my $real_title = 0;
 	if ( !defined $ref ) {
-		print_stderr('$ref is not defined!!!');
+
+		#print_stderr('$ref is not defined!!!');
 		return 0;
 	}
 	my %url_object = %{$ref};
@@ -763,7 +671,8 @@ sub username_defined_post {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
 
 	if ( -f $tell_file ) {
-		print_stderr( localtime(time) . "\tCalling tell_nick" );
+
+		#print_stderr( localtime(time) . "\tCalling tell_nick" );
 		my ($tell_to_say) = tell_nick($who_said);
 		if ( defined $tell_to_say ) {
 
@@ -777,9 +686,6 @@ sub username_defined_post {
 	}
 
 	# Trunicate history file only if the bot's username is set.
-	if ( -f $history_file ) {
-		trunicate_history;
-	}
 	return;
 }
 
@@ -961,25 +867,6 @@ sub urban_dictionary {
 	return 0;
 }
 
-=head1 Get Unicode Hex from Characters
-=cut
-
-sub get_codepoints {
-	my ( $code_who, $to_unpack ) = @_;
-	print_stderr("to unpack: '$to_unpack'");
-	my @codepoints = unpack 'U*', $to_unpack;
-
-	my $str = sprintf '%x ' x @codepoints, @codepoints;
-	$str =~ s/ $//;
-	$str = uc $str;
-	msg_same_origin( $code_who, $str ) and return 1;
-	return 0;
-}
-
-=head1 Unicode Lookup
-Takes unicode hex and finds the page on fileformat.info
-=cut
-
 sub u_lookup {
 	my ( $u_lookup_who, $u_lookup_code ) = @_;
 	if ( $u_lookup_code =~ m/^(\S+)/ ) {
@@ -1114,11 +1001,12 @@ my %commands = (
 	'ucirc'         => \&uppercase_irc,
 	'lc'            => \&lowercase,
 	'lcirc'         => \&lowercase_irc,
-	'perl'          => \&eval_perl,
-	'p'             => \&eval_perl,
-	'ud'            => \&urban_dictionary,
-	'help'          => \&print_help,
-	'action'        => \&format_action,
+
+	#'perl'          => \&eval_perl,
+	#'p'             => \&eval_perl,
+	'ud'     => \&urban_dictionary,
+	'help'   => \&print_help,
+	'action' => \&format_action,
 );
 print_stderr("starting format #channel >botusername< <who> message");
 
@@ -1131,7 +1019,8 @@ while (<>) {
 	}
 	my $channel      = $1;
 	my $bot_username = $2;
-	print $bot_username . "\n";
+
+	#print $bot_username . "\n";
 	my $who_said     = $3;
 	my $body         = $4;
 	my $welcome_text = "Welcome to the channel $who_said. We're friendly here, "
@@ -1139,7 +1028,6 @@ while (<>) {
 	utf8::decode($who_said);
 	utf8::decode($body);
 	if ( defined $channel ) { utf8::decode($channel) }
-	print_stderr("body: '$body'");
 
 	# MAIN
 	if ( defined $bot_username and $bot_username ne $EMPTY ) {
@@ -1165,6 +1053,7 @@ while (<>) {
 	if (   ( $body =~ m{^s/.+/}i and $bot_username ne 'skbot' )
 		or ( $body =~ m{^S/.+/} and $bot_username eq 'skbot' ) and defined $history_file )
 	{
+		next;
 		my ( $sed_who, $sed_text ) = sed_replace($body);
 		$sed_text = shorten_text($sed_text);
 		if ( defined $sed_who and defined $sed_text ) {

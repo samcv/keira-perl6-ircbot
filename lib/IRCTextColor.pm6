@@ -76,7 +76,7 @@ sub irc-text ($text is copy, :$color? = 0, :$style? = 0) is export {
 	return $text;
 }
 
-sub irc-style ($text is rw, :$color? = 0, :$style? = 0) is export {
+sub irc-style (Str $text is rw, :$color? = 0, :$style? = 0) is export {
 	given $color {
 		if %irc-colors{$color} {
 			$text = %irc-styles{'color'} ~ %irc-colors{$color} ~ $text ~ %irc-styles{'reset'};

@@ -1,4 +1,5 @@
 ### perlbot
+[![Build Status](https://travis-ci.org/samcv/perlbot.svg?branch=master)](https://travis-ci.org/samcv/perlbot)
 
 This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
 in Perl 6, and the rest is being ported over now.

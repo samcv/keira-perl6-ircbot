@@ -1,4 +1,6 @@
 #!/usr/bin/env perl
+## This file is only here for historical purposes. It doesn't work with the
+## current said.pl anymore.
 use strict;
 use warnings;
 use diagnostics;

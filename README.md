@@ -1,11 +1,13 @@
 ### perlbot
 
-This is an IRC bot which will respond to the IRC channel when somebody pastes a link with the page title of that page
+This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
+in Perl 6, and the rest is being ported over now.
 
-	Usage: perlbot.pl "username" "real name" "server address" "server port" "server channel"
+	Usage: perlbot.p6 "username" "real name" "server address" "server port" "server channel"
 
 ### Commands
-
+This list is not complete, and needs to be updated for lots of changes that have been made.
+All of these commands still work that are listed below though
 #### Tell
 Usage: `!tell nickname Message to tell them`
 

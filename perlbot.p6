@@ -158,9 +158,13 @@ class said2 does IRC::Client::Plugin {
 		my $timer_4 = now;
 		say "proc print: {$timer_4 - $timer_3}";
 		say "Trying to write to $filename : {$e.channel} >$bot-username\< \<{$e.nick}> {$e.text}";
+		# Sed: s/before/after/gi functionality. Use g or i at the end to make it global or
+		# case insensitive
 		if $e.text ~~ m:i{ ^ 's/' (.+?) '/' (.*) '/'? } {
 			my Str $before = $0.Str;
 			my Str $after = $1.Str;
+			# We need to do this to allow Perl 5/PCRE style regex's to work as expected in Perl 6
+			# And make user input safe
 			while $before ~~ /'[' .*? <( '-' )> .*? ']'/ {
 				$before ~~ s:g/'[' .*? <( '-' )> .*? ']'/../;
 			}
@@ -214,6 +218,8 @@ class said2 does IRC::Client::Plugin {
 		}
 		%history{$now}{'text'} = $e.text;
 		%history{$now}{'nick'} = $e.nick;
+		# If any of the words we see are nicknames we've seen before, update the last time that
+		# person was mentioned
 		for $e.text.trans(';,:' => '').words { %chan-event{$e.nick}{'mentioned'}{$_} = $now if %chan-event{$_}:exists }
 		if $e.text ~~ /^'!seen ' $<nick>=(\S+)/ {
 			my $seen-nick = ~$<nick>;
@@ -254,6 +260,7 @@ class said2 does IRC::Client::Plugin {
 				$.irc.send: :where($e.nick), :text($second);
 			}
 		}
+		# Perl 6 Eval
 		elsif $e.text ~~ /^'!p6 '(.+)/ {
 			my $eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $0, :r, :w;
 			my ($stdout-result, $stderr-result);
@@ -287,6 +294,7 @@ class said2 does IRC::Client::Plugin {
 
 			}
 		}
+		# Perl 5 Eval TODO try and combine both P5 and P6 into one function
 		elsif $e.text ~~ /^'!p '(.+)/ {
 			my $eval-proc = Proc::Async.new: "perl", 'eval.pl', $0, :r, :w;
 			my ($stdout-result, $stderr-result);
@@ -320,6 +328,7 @@ class said2 does IRC::Client::Plugin {
 
 			}
 		}
+		# Remove old keys if history is bigger than 30 and divisible by 8
 		if %history.elems > 30 and %history.elems %% 8 {
 			for %history.sort -> $pair {
 				last if %history.elems <= 30;

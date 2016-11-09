@@ -1093,4 +1093,4 @@ while (<>) {
 	}
 }
 
-# vim: ts=4
+# vim: noet

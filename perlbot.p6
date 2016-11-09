@@ -342,3 +342,5 @@ my $irc = IRC::Client.new(
 	debug    => False,
 	plugins  => said2.new);
 $irc.run;
+
+# vim: noet

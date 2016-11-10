@@ -3,6 +3,8 @@ use IRC::Client;
 use Terminal::ANSIColor;
 use JSON::Fast;
 use IRCTextColor;
+use WWW::Google::Time;
+
 
 class said2 does IRC::Client::Plugin {
 	has $.said-filename = 'said.pl';
@@ -201,6 +203,14 @@ class said2 does IRC::Client::Plugin {
 				$.irc.send: :where($e.nick), :text($second);
 			}
 		}
+		elsif $e.text ~~ /^'!time '(.*)/ {
+			my %google-time = google-time-in(~$0);
+
+			start {
+				$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+			}
+		}
+
 		# Perl 6 Eval
 		elsif $e.text ~~ /^'!p6 '(.+)/ {
 			my $eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $0, :r, :w;

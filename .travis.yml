@@ -4,4 +4,4 @@ perl6:
 
 install:
     - rakudobrew build-panda
-    - panda install IRC::Client Terminal::ANSIColor JSON::Fast
+    - panda install IRC::Client Terminal::ANSIColor JSON::Fast WWW::Google::Time

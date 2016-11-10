@@ -18,9 +18,37 @@ class said2 does IRC::Client::Plugin {
 	has Instant $!said-modified-time;
 	has Supplier $.event_file_supplier = Supplier.new;
 	has Supply $.event_file_supply = $!event_file_supplier.Supply;
+	my %op;
+	%op{'samcv'}{'usermask'} = 'samcv!~samcv@unaffiliated/samcv';
+	%op{'samcv'}{'hostname'} = 'unaffiliated/samcv';
 	#has $.kill-prom = Promise.new;
 	#signal(SIGINT).act( { $!event_file_supplier.emit( 1 );
+	method irc-mode-channel ($e) {
+		my @mode-pairs = $e.modes;
+		my $server = $e.server;
+		my $mode-type = @mode-pairs.shift;
+		my $mode;
+		$mode-type = $mode-type.key ~ $mode-type.value;
+		for @mode-pairs -> $elem {
+			$mode ~= $elem.value;
+		}
 
+		say $mode;
+		say $mode-type;
+		if $mode-type ~~ /'b'/ {
+			my $user = $mode;
+			$mode ~~ m/ ^ $<nick>=( \S+ ) '!' /;
+			my $nick = $<nick>;
+			$nick ~~ s:g/ (\S*)? '*' (\S*)?/'$0'\\S*'$1'/;
+			$nick ~~ s/ '*' /\\S*/;
+			say "nick regex: $nick";
+			for %chan-event.keys -> $key {
+				if $key ~~ /<$nick>/ {
+				}
+			}
+		}
+
+	}
 	method irc-join ($e) {
 		%chan-event{$e.nick}{'join'} = now.Rat;
 		%chan-event{$e.nick}{'host'} = $e.host;
@@ -204,11 +232,35 @@ class said2 does IRC::Client::Plugin {
 			}
 		}
 		elsif $e.text ~~ /^'!time '(.*)/ {
-			my %google-time = google-time-in(~$0);
-
+			my $time-query = ~$0;
 			start {
-				$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+				my %google-time;
+				try { %google-time = google-time-in($time-query) };
+				if !$! {
+					$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+				}
+				else {
+					$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
+				}
 			}
+		}
+		elsif $e.text ~~ / ^ '!ban ' (\S+) ' '? (\S+)? / {
+
+			my $ban-who = $0;
+			my $ban-len = $1;
+			if $e.nick eq any(%op.keys) {
+				if $e.host eq %op{$e.nick}{'hostname'} and $e.usermask eq %op{$e.nick}{'usermask'} {
+					$.irc.send-cmd: 'MODE', "{$e.channel} +b $ban-who*!*@*", $e.server;
+				}
+			}
+			else {
+				$.irc.send: :where($e.channel), :text("Your nick/hostname/usermask did not match. You are not authorized to perform this action");
+			}
+		}
+		elsif $e.text ~~ / ^ '!unban ' (\S+) ' '? (\S+)? / {
+			my $ban-who = $0;
+			my $ban-len = $1;
+			$.irc.send-cmd: 'MODE', "{$e.channel} -b $ban-who*!*@*", $e.server;
 		}
 
 		# Perl 6 Eval

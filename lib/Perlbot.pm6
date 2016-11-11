@@ -2,9 +2,17 @@ use v6.c;
 use IRC::Client;
 use Terminal::ANSIColor;
 use JSON::Fast;
-use IRCTextColor;
 use WWW::Google::Time;
+use lib 'lib';
+use IRCTextColor;
+=head1 What
+=para
+A Perl 6+5 bot using the IRC::Client Perl 6 module
 
+=head1 Description
+=para
+This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
+in Perl 6, and the rest is being ported over now.
 
 class said2 does IRC::Client::Plugin {
 	has $.said-filename = 'said.pl';
@@ -91,10 +99,6 @@ class said2 does IRC::Client::Plugin {
 			%chan-event = from-json( slurp $event-filename );
 			say %chan-event;
 		}
-		# Probably not the best way to do things since this doesn't need to
-		# be put in a 'start' block because of using '.act', but we can check
-		# if the promise was kept (no exceptions) and then if so copy it
-		# over the old event file
 		sub write-file ( %data, $file-bak, $file, $last-saved is rw ) {
 			if now - $last-saved > 10 or !$last-saved.defined {
 				my $file-bak-io = IO::Path.new($file-bak);
@@ -128,8 +132,10 @@ class said2 does IRC::Client::Plugin {
 		my $timer_4 = now;
 		say "proc print: {$timer_4 - $timer_3}";
 		say "Trying to write to $!said-filename : {$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}";
-		# Sed: s/before/after/gi functionality. Use g or i at the end to make it global or
-		# case insensitive
+		=head2 Text Substitution
+		=para
+		s/before/after/gi functionality. Use g or i at the end to make it global or case insensitive
+
 		if $e.text ~~ m:i{ ^ 's/' (.+?) '/' (.*) '/'? } {
 			my Str $before = $0.Str;
 			my Str $after = $1.Str;
@@ -146,9 +152,11 @@ class said2 does IRC::Client::Plugin {
 			$before ~~ s:g/'[' (.*?) ']'/<[$0]>/;
 			$before ~~ s:g/' '/<.ws>/; # Replace spaces with <.ws>
 			my $options;
-			# If the last character is a slash, we assume any slashes in the $after term are literal
-			# ( Except for the last one )
-			# If not, then anything after the last slash is a specifier
+			=para
+			If the last character is a slash, we assume any slashes in the $after term are literal
+			( Except for the last one )
+			If not, then anything after the last slash is a specifier
+
 			if $after !~~ s/ '/' $ // {
 				if $after ~~ s/ (.*?) '/' (.+) /$0/ {
 					$options = ~$1;
@@ -221,6 +229,10 @@ class said2 does IRC::Client::Plugin {
 			$cmd-out ~~ s:g/\n/ /;
 			$.irc.send: :where($e.channel), :text($cmd-out);
 		}
+		=head2 Mentioned
+		=para Gets the last time the specified person mentioned any users the bot knows about.
+		=para `Usage: !mentioned nickname`
+
 		elsif $e.text ~~ /^'!mentioned '(\S+)/ {
 			my $temp_nick = $0;
 			if %chan-event{$temp_nick}{'mentioned'}:exists {
@@ -231,6 +243,10 @@ class said2 does IRC::Client::Plugin {
 				$.irc.send: :where($e.nick), :text($second);
 			}
 		}
+		=head2 Time
+		=para Gets the current time in the specified location. Uses Google to do the lookups.
+		=para `Usage !time Location`
+
 		elsif $e.text ~~ /^'!time '(.*)/ {
 			my $time-query = ~$0;
 			start {
@@ -263,7 +279,11 @@ class said2 does IRC::Client::Plugin {
 			$.irc.send-cmd: 'MODE', "{$e.channel} -b $ban-who*!*@*", $e.server;
 		}
 
-		# Perl 6 Eval
+		=head2 Perl 6 Eval
+		=para Evaluates the requested Perl 6 code and returns the output of standard out
+		and error messages.
+		=para `Usage: !p6 my $var = "Hello Perl 6 World!"; say $var`
+
 		elsif $e.text ~~ /^'!p6 '(.+)/ {
 			my $eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $0, :r, :w;
 			my ($stdout-result, $stderr-result);
@@ -297,7 +317,12 @@ class said2 does IRC::Client::Plugin {
 
 			}
 		}
-		# Perl 5 Eval TODO try and combine both P5 and P6 into one function
+		=head2 Perl 5 Eval
+		=para Evaluates the requested Perl 5 code and returns the output of standard out
+		and error messages.
+		=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
+
+		# TODO try and combine both P5 and P6 into one function
 		elsif $e.text ~~ /^'!p '(.+)/ {
 			my $eval-proc = Proc::Async.new: "perl", 'eval.pl', $0, :r, :w;
 			my ($stdout-result, $stderr-result);

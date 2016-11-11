@@ -43,8 +43,9 @@ Perl 5 Eval
 Evaluates the requested Perl 5 code and returns the output of standard out and error messages.
 
 `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
+
 ## Commands performed by Perl 5 in `said.pl`
-All of these commands still work that are listed below though
+All of these commands below have not been reimplemented in Perl 6 yet.
 #### Tell
 Usage: `!tell nickname Message to tell them`
 
@@ -70,15 +71,21 @@ Output: `arigatougozaimasita`
 Usage: `!fortune`
 Gets a short fortune using the Linux/Unix `fortune` program.
 
+### Hexidecimal/Decimal/Unicode conversions
+You can convert between any of these three using the general syntax `!from2to`
+
+When converting from numerical each value that is a different number is
+delimited by spaces.  Examples are below.
+
 #### Get Unicode Codepoints
-Usage: `!u 🐧ABCD`
+Usage: `!hex2uni 🐧ABCD`
 
 Output: `1F427 41 42 43 44`
 
 Will get the Unicode codepoints in hex for a given string.
 
 #### Convert from Unicode Codepoints to Characters
-Usage: `!unicode 1F427 41 42 43 44`
+Usage: `!uni2hex 1F427 41 42 43 44`
 
 Output: `🐧ABCD`
 

@@ -1,0 +1,12 @@
+{
+    "perl"        : "6.c",
+    "name"        : "Perlbot",
+    "version"     : "v0.7.0",
+    "authors"	  : ["github:samcv"],
+    "description" : "My IRC Bot",
+    "depends"     : ["JSON::Fast",
+                    "IRC::Client",
+                    "Terminal::ANSIColor",
+                    "WWW::Google::Time"],
+    "source-url"  : "git://github.com/samcv/perlbot.git"
+}

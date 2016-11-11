@@ -19,15 +19,13 @@ class said2 does IRC::Client::Plugin {
 	my $promise;
 	my %chan-event;
 	my %history;
+	my %op;
 	has $.last-saved-event = now;
 	has $.last-saved-history = now;
 	has IO::Handle $!channel-event-fh;
 	has Instant $!said-modified-time;
 	has Supplier $.event_file_supplier = Supplier.new;
 	has Supply $.event_file_supply = $!event_file_supplier.Supply;
-	my %op;
-	%op{'samcv'}{'usermask'} = 'samcv!~samcv@unaffiliated/samcv';
-	%op{'samcv'}{'hostname'} = 'unaffiliated/samcv';
 	#has $.kill-prom = Promise.new;
 	#signal(SIGINT).act( { $!event_file_supplier.emit( 1 );
 	method irc-mode-channel ($e) {
@@ -61,7 +59,7 @@ class said2 does IRC::Client::Plugin {
 		%chan-event{$e.nick}{'host'} = $e.host;
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
 
-		$!event_file_supplier.emit( 1 );
+		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-part ($e) {
@@ -71,7 +69,7 @@ class said2 does IRC::Client::Plugin {
 		%chan-event{$e.nick}{'host'} = $e.host;
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
 
-		$!event_file_supplier.emit( 1 );
+		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-quit ($e) {
@@ -80,7 +78,7 @@ class said2 does IRC::Client::Plugin {
 
 		%chan-event{$e.nick}{'host'} = $e.host;
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
-		$!event_file_supplier.emit( 1 );
+		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-connected ($e) {
@@ -88,18 +86,25 @@ class said2 does IRC::Client::Plugin {
 		my Str $history-filename = $e.server.current-nick ~ '-history.json';
 		my Str $event-filename-bak = $event-filename ~ '.bak';
 		my Str $history-filename-bak = $history-filename ~ '.bak';
+		my Str $ops-filename = $e.server.current-nick ~ '-ops.json';
+		my Str $ops-filename-bak = $ops-filename ~ '.bak';
 		if ! %history {
-			say "Trying to load $history-filename";
-			%history = from-json( slurp $history-filename );
-			say %history;
+			load-file(%history, $history-filename, $e);
 		}
 		if ! %chan-event {
-			say "Trying to load $event-filename";
-			%chan-event = from-json( slurp $event-filename );
-			say %chan-event;
+			load-file(%chan-event, $event-filename, $e);
 		}
-		sub write-file ( %data, $file-bak, $file, $last-saved is rw ) {
-			if now - $last-saved > 10 or !$last-saved.defined {
+		if ! %op {
+			load-file(%op, $ops-filename, $e);
+		}
+			my $ops-file-watch-supply = $ops-filename.IO.watch;
+		multi write-file ( %data, $file-bak, $file ) {
+			my $var = 0.Int;
+			my $force = 1.Int;
+			write-file(%data, $file-bak, $file, $var, $force);
+		}
+		multi write-file ( %data, $file-bak, $file, $last-saved is rw, Int $force ) {
+			if now - $last-saved > 10 or !$last-saved.defined or $force {
 				my $file-bak-io = IO::Path.new($file-bak);
 				try {
 					say colored("Trying to update $file data", 'blue');
@@ -113,8 +118,10 @@ class said2 does IRC::Client::Plugin {
 				$last-saved = now;
 			}
 		}
-		$.event_file_supply.act( { write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event ) } );
-		$.event_file_supply.act( { write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history ) } );
+
+		$.event_file_supply.act( -> $msg { write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event, $msg.Int ) } );
+		$.event_file_supply.act( -> $msg { write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history, $msg.Int ) } );
+		#$ops-file-watch-supply.act( {
 		Nil;
 	}
 	method irc-privmsg-channel ($e) {
@@ -365,8 +372,16 @@ class said2 does IRC::Client::Plugin {
 				%history{$pair.key}:delete;
 			}
 		}
+		=head2 Saving Channel Event Data
+		=para The command `!SAVE` will cause the channel event data and history file to be saved.
+		Normally it will save when the data changes in memory provided it hasn't already saved
+		within the last 10 seconds
+
+		if $e.text ~~ /^'!SAVE'/ {
+			$!event_file_supplier.emit( 1 );
+		}
 		if $!proc ~~ Proc::Async { $working = $!proc.started } else { $working = False }
-		if ! $working or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^RESET$/ {
+		if ! $working or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
 			$!said-modified-time = $!said-filename.IO.modified;
 			if $!proc.started {
 				note "trying to kill $!said-filename";
@@ -394,7 +409,7 @@ class said2 does IRC::Client::Plugin {
 		}
 
 		$!proc.print("{$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}\n");
-		$!event_file_supplier.emit( 1 );
+		$!event_file_supplier.emit( 0 );
 		my $timer_10 = now;
 		say "took this many seconds: {$timer_10 - $timer_1}";
 		Nil;
@@ -428,5 +443,19 @@ sub format-time ( $time-since-epoch ) {
 	}
 	$tell_return ~= 'ago]';
 	return irc-text($tell_return, :color<teal> );
+}
+
+sub load-file ( \hash, Str $filename, $e ) is rw {
+	my $hash := hash;
+	if $filename.IO.e {
+		say "Trying to load $filename";
+		$hash := from-json( slurp $filename );
+		say "$filename DATA:" if $e.irc.debug.Bool;
+		say $hash if $e.irc.debug.Bool;
+	}
+	else {
+		say "Cannot find $filename";
+	}
+	$hash;
 }
 # vim: noet

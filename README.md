@@ -44,6 +44,11 @@ Evaluates the requested Perl 5 code and returns the output of standard out and e
 
 `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
 
+Saving Channel Event Data
+-------------------------
+
+The command `!SAVE` will cause the channel event data and history file to be saved. Normally it will save when the data changes in memory provided it hasn't already saved within the last 10 seconds
+
 ## Commands performed by Perl 5 in `said.pl`
 All of these commands below have not been reimplemented in Perl 6 yet.
 #### Tell

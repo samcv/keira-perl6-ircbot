@@ -3,7 +3,6 @@ use IRC::Client;
 use Terminal::ANSIColor;
 use JSON::Fast;
 use WWW::Google::Time;
-use lib 'lib';
 use IRCTextColor;
 =head1 What
 =para

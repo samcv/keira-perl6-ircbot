@@ -1,4 +1,4 @@
-
+o
 ## Commands performed by Perl 5 in `said.pl`
 All of these commands below have not been reimplemented in Perl 6 yet.
 #### Tell
@@ -10,10 +10,6 @@ This will tell that person the message the next time they speak in the channel o
 Usage: `!tell in 1m/h/d Message to tell them`
 
 This will tell that person the message after that many minutes/hours/days that you specify.  It is triggered when they speak in the channel or private message the bot.
-
-#### Seen
-Usage: `!seen nickname`
-Will tell you the last time that nickname has spoken, joined or parted/quit the channel.
 
 #### Transliterate
 Usage: `!transliterate ありがとうございました`
@@ -75,15 +71,10 @@ You can also ask it a this or that question, with a maximum number of arguments 
 
 `It is going to be a good day today` or `A bad day today`
 
-	fullwidth
-	fw
-	fromhex
-	tohex
+	fullwidth/fw
 	uc
 	ucirc
 	lc
 	lcirc
-	perl
-	p
 	help
 	action

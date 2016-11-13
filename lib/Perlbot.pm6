@@ -18,11 +18,11 @@ class said2 does IRC::Client::Plugin {
 	has $.said-filename = 'said.pl';
 	has $.proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
 	my $promise;
-	my %chan-event;    #| %chan-event{$e.nick}{join/part/quit/host/usermask}
-	my %chan-mode;     #| %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
-	my %curr-chanmode; #| %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
-	my %history;       #| %history{$now}{text/nick/sed}
-	my %op;            #| %op{'nick'}{usermask/hostname}
+	my %chan-event;    # %chan-event{$e.nick}{join/part/quit/host/usermask}
+	my %chan-mode;     # %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
+	my %curr-chanmode; # %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
+	my %history;       # %history{$now}{text/nick/sed}
+	my %op;            # %op{'nick'}{usermask/hostname}
 	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
 	has $.last-saved-event = now;
 	has $.last-saved-history = now;
@@ -33,7 +33,7 @@ class said2 does IRC::Client::Plugin {
 	has Supply $.event_file_supply = $!event_file_supplier.Supply;
 	has Supply:U $.tick-supply;
 	has Supply:D $.tick-supply-interval = $!tick-supply.interval(1);
-	#| Bans the mask from specified channel
+	# Bans the mask from specified channel
 	sub ban ( $e, $channel, $mask, $secs) {
 		my $ban-for = now.Rat + $secs;
 		%chan-mode{$e.server.host}{$channel}{$ban-for}{'-b'} = $mask;
@@ -54,7 +54,7 @@ class said2 does IRC::Client::Plugin {
 		say "$channel $user $message";
 		$e.irc.send-cmd: 'KICK', "$channel $user", ":$message", $e.server;
 	}
-	#| Receives an object and checks that the sender is an op
+	# Receives an object and checks that the sender is an op
 	sub check-ops ( $e ) {
 		if %op{$e.nick} {
 			if $e.host eq %op{$e.nick}{'hostname'} and $e.usermask eq %op{$e.nick}{'usermask'} {
@@ -63,7 +63,6 @@ class said2 does IRC::Client::Plugin {
 		}
 		return 0;
 	}
-	#has $.kill-prom = Promise.new;
 
 	method irc-mode-channel ($e) {
 		my @mode-pairs = $e.modes;
@@ -292,6 +291,11 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel) :text($mc.read(75));
 				}
 			}
+			=head2 Seen
+			=para
+			Replys with the last time the specified user has spoke, joined, quit or parted.
+			`Usage: !seen nickname`
+
 			when /^'!seen ' $<nick>=(\S+)/ {
 				my $seen-nick = ~$<nick>;
 				last if ! %chan-event{$seen-nick};
@@ -322,6 +326,15 @@ class said2 does IRC::Client::Plugin {
 			when /^'!SAVE'/ {
 				$!event_file_supplier.emit( 1 );
 			}
+			=head1 Operator Commands
+			=para
+			People who have been added as an operator in the 'botnick-ops.json' file will be allowed
+			to perform the following commands if their nick, hostname and usermask match those
+			in the file.
+
+			=head2 Unban
+			=para `Usage: !unban nick`
+
 			when / ^ '!unban ' (\S+) ' '? (\S+)? / {
 				my $ban-who = $0;
 				my $ban-len = $1;
@@ -333,6 +346,13 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
+			=head2 Ban
+			=para
+			The specified user will be banned by 30 minutes at default. You can override this and
+			set a specific number of seconds to ban for instead. The bot will automatically unban
+			the person once this time period is up, as well as printing to the channel how long the
+			user has been banned for.
+
 			when / ^ '!ban ' (\S+) ' '? (\S+)? / {
 				my $ban-who = $0;
 				my $ban-len = $1;
@@ -344,6 +364,10 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
+			=head2 Op
+			=para Gives ops to specified user, or if no user is specified, gives operator to the
+			user who did the command. `Usage: !op` or `!op nickname`.
+
 			when / ^ '!op' ' '? (\S+)? / {
 				if check-ops($e) {
 					my $op-who = $0.defined ?? $0 !! $e.nick;
@@ -353,6 +377,10 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
+			=head2 DeOp
+			=para Takes ops away from the specified user, or if no user is specified, removes operator
+			status from the user who did the command. `Usage: !deop` or `!deop nickname`.
+
 			when / ^ '!deop' ' '? (\S+)? / {
 				if check-ops($e) {
 					my $op-who = $0.defined ?? $0 !! $e.nick;
@@ -362,6 +390,10 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
+			=head2 Kick
+			=para Kicks the specified user from the channel. You are also allowed to specify a
+			custom kickmessage as well. `Usage: !kick nickname` or `!kick nickname custom message`.
+
 			when m{ ^ '!kick ' $<kick-who>=(\S+) ' '? $<message>=(.+)? } {
 				if check-ops($e) {
 					my $message = $<message> ?? $<message> !! "Better luck next time";

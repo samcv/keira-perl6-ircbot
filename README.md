@@ -16,6 +16,46 @@ s/before/after/gi functionality. Use g or i at the end to make it global or case
 
 If the last character is a slash, we assume any slashes in the $after term are literal ( Except for the last one ) If not, then anything after the last slash is a specifier
 
+Seen
+----
+
+Replys with the last time the specified user has spoke, joined, quit or parted. `Usage: !seen nickname`
+
+Saving Channel Event Data
+-------------------------
+
+The command `!SAVE` will cause the channel event data and history file to be saved. Normally it will save when the data changes in memory provided it hasn't already saved within the last 10 seconds
+
+Operator Commands
+=================
+
+People who have been added as an operator in the 'botnick-ops.json' file will be allowed to perform the following commands if their nick, hostname and usermask match those in the file.
+
+Unban
+-----
+
+`Usage: !unban nick`
+
+Ban
+---
+
+The specified user will be banned by 30 minutes at default. You can override this and set a specific number of seconds to ban for instead. The bot will automatically unban the person once this time period is up, as well as printing to the channel how long the user has been banned for.
+
+Op
+--
+
+Gives ops to specified user, or if no user is specified, gives operator to the user who did the command. `Usage: !op` or `!op nickname`.
+
+DeOp
+----
+
+Takes ops away from the specified user, or if no user is specified, removes operator status from the user who did the command. `Usage: !deop` or `!deop nickname`.
+
+Kick
+----
+
+Kicks the specified user from the channel. You are also allowed to specify a custom kickmessage as well. `Usage: !kick nickname` or `!kick nickname custom message`.
+
 Mentioned
 ---------
 
@@ -43,11 +83,6 @@ Perl 5 Eval
 Evaluates the requested Perl 5 code and returns the output of standard out and error messages.
 
 `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
-
-Saving Channel Event Data
--------------------------
-
-The command `!SAVE` will cause the channel event data and history file to be saved. Normally it will save when the data changes in memory provided it hasn't already saved within the last 10 seconds
 
 ## Commands performed by Perl 5 in `said.pl`
 All of these commands below have not been reimplemented in Perl 6 yet.

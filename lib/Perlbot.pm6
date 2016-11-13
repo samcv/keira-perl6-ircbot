@@ -41,18 +41,20 @@ class said2 does IRC::Client::Plugin {
 		$e.irc.send: :where($e.channel) :text("Banned for {format-time($ban-for)}");
 	}
 	sub unban ( $e, $channel, $mask) {
-		$e.irc.send-cmd: 'MODE', "{$e.channel} -b $mask", $e.server;
+		$e.irc.send-cmd: 'MODE', "{$e.channel} -b $mask", :server($e.server);
 	}
 	sub give-ops ( $e, $channel, $nick) {
-		$e.irc.send-cmd: 'MODE', "$channel +o $nick", $e.server;
+		$e.irc.send-cmd: 'MODE', "$channel +o $nick", :server($e.server);
 	}
 	sub take-ops ( $e, $channel, $nick) {
-		$e.irc.send-cmd: 'MODE', "$channel -o $nick", $e.server;
+		$e.irc.send-cmd: 'MODE', "$channel -o $nick", :server($e.server);
 	}
-
 	sub kick ( $e, $channel, $user, $message ) {
 		say "$channel $user $message";
-		$e.irc.send-cmd: 'KICK', "$channel $user", ":$message", $e.server;
+		$e.irc.send-cmd: 'KICK', $channel, $user, $message, :server($e.server);
+	}
+	sub topic ( $e, $topic ) {
+		$e.irc.send-cmd: 'TOPIC', $e.channel, $topic, :server($e.server);
 	}
 	# Receives an object and checks that the sender is an op
 	sub check-ops ( $e ) {
@@ -179,9 +181,11 @@ class said2 does IRC::Client::Plugin {
 				}
 			}
 		 } );
-		$.event_file_supply.tap( -> $msg { write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event, $msg.Int ) } );
-		$.event_file_supply.tap( -> $msg { write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history, $msg.Int ) } );
-		$.event_file_supply.tap( -> $msg { write-file( %chan-mode, $ban-filename-bak, $ban-filename, $!last-saved-ban, $msg.Int ) } );
+		$.event_file_supply.tap( -> $msg {
+			write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event, $msg.Int);
+			write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history, $msg.Int);
+			write-file( %chan-mode, $ban-filename-bak, $ban-filename, $!last-saved-ban, $msg.Int);
+		} );
 		Nil;
 	}
 	method irc-privmsg-channel ($e) {
@@ -332,6 +336,24 @@ class said2 does IRC::Client::Plugin {
 			to perform the following commands if their nick, hostname and usermask match those
 			in the file.
 
+			=head2 Ban
+			=para
+			The specified user will be banned by 30 minutes at default. You can override this and
+			set a specific number of seconds to ban for instead. The bot will automatically unban
+			the person once this time period is up, as well as printing to the channel how long the
+			user has been banned for. Usage: `!ban nick`.
+
+			when / ^ '!ban ' (\S+) ' '? (\S+)? / {
+				my $ban-who = $0;
+				my $ban-len = $1;
+				$ban-len = $ban-len > 0 ?? $ban-len !! 1800;
+				if check-ops($e) {
+					ban($e, $e.channel, "$ban-who*!*@*", $ban-len);
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
 			=head2 Unban
 			=para `Usage: !unban nick`
 
@@ -346,24 +368,7 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
-			=head2 Ban
-			=para
-			The specified user will be banned by 30 minutes at default. You can override this and
-			set a specific number of seconds to ban for instead. The bot will automatically unban
-			the person once this time period is up, as well as printing to the channel how long the
-			user has been banned for.
 
-			when / ^ '!ban ' (\S+) ' '? (\S+)? / {
-				my $ban-who = $0;
-				my $ban-len = $1;
-				$ban-len = $ban-len > 0 ?? $ban-len !! 1800;
-				if check-ops($e) {
-					ban($e, $e.channel, "$ban-who*!*@*", $ban-len);
-				}
-				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-				}
-			}
 			=head2 Op
 			=para Gives ops to specified user, or if no user is specified, gives operator to the
 			user who did the command. `Usage: !op` or `!op nickname`.
@@ -403,6 +408,15 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
 				}
 			}
+			=head2 Topic
+			=para Sets the topic. `Usage: !topic new topic message here`.
+
+			when / ^ '!topic ' $<topic>=(.*) / {
+				if check-ops($e) {
+					topic($e, $<topic>);
+				}
+			}
+
 
 		}
 		%history{$now}{'text'} = $e.text;
@@ -614,8 +628,8 @@ sub load-file ( \hash, Str $filename, $e ) is rw {
 	if $filename.IO.e {
 		say "Trying to load $filename";
 		$hash := from-json( slurp $filename );
-		say "$filename DATA:" if $e.irc.debug.Bool;
-		say $hash if $e.irc.debug.Bool;
+		#say "$filename DATA:" if $e.irc.debug.Bool;
+		#say $hash if $e.irc.debug.Bool;
 	}
 	else {
 		say "Cannot find $filename";

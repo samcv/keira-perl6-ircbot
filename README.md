@@ -31,15 +31,15 @@ Operator Commands
 
 People who have been added as an operator in the 'botnick-ops.json' file will be allowed to perform the following commands if their nick, hostname and usermask match those in the file.
 
+Ban
+---
+
+The specified user will be banned by 30 minutes at default. You can override this and set a specific number of seconds to ban for instead. The bot will automatically unban the person once this time period is up, as well as printing to the channel how long the user has been banned for. Usage: `!ban nick`.
+
 Unban
 -----
 
 `Usage: !unban nick`
-
-Ban
----
-
-The specified user will be banned by 30 minutes at default. You can override this and set a specific number of seconds to ban for instead. The bot will automatically unban the person once this time period is up, as well as printing to the channel how long the user has been banned for.
 
 Op
 --
@@ -55,6 +55,11 @@ Kick
 ----
 
 Kicks the specified user from the channel. You are also allowed to specify a custom kickmessage as well. `Usage: !kick nickname` or `!kick nickname custom message`.
+
+Topic
+-----
+
+Sets the topic. `Usage: !topic new topic message here`.
 
 Mentioned
 ---------

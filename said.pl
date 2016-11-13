@@ -661,13 +661,6 @@ sub addressed {
 	return 0;
 }
 
-sub trunicate_history {
-	system "tail -n $history_file_length $history_file | sponge $history_file"
-		and print_stderr("Problem with tail ./$history_file | sponge ./$history_file, Error $ERRNO");
-
-	return;
-}
-
 sub username_defined_post {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
 
@@ -1027,7 +1020,7 @@ while (<>) {
 			msg_channel("<$sed_who> $sed_text");
 		}
 	}
-	if ( $body =~ /^!\S+2\S+ / ) {
+	if ( $body =~ /^!\S+2\S* / ) {
 		print_stderr('I think this is a convert command');
 		my $temp5 = $body;
 		$temp5 =~ s/^!//;

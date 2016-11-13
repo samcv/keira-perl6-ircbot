@@ -1,5 +1,6 @@
 use v6.c;
 use IRC::Client;
+use Text::Markov;
 use Terminal::ANSIColor;
 use JSON::Fast;
 use WWW::Google::Time;
@@ -17,17 +18,53 @@ class said2 does IRC::Client::Plugin {
 	has $.said-filename = 'said.pl';
 	has $.proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
 	my $promise;
-	my %chan-event;
-	my %history;
-	my %op;
+	my %chan-event;    #| %chan-event{$e.nick}{join/part/quit/host/usermask}
+	my %chan-mode;     #| %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
+	my %curr-chanmode; #| %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
+	my %history;       #| %history{$now}{text/nick/sed}
+	my %op;            #| %op{'nick'}{usermask/hostname}
+	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
 	has $.last-saved-event = now;
 	has $.last-saved-history = now;
+	has $.last-saved-ban = now;
 	has IO::Handle $!channel-event-fh;
 	has Instant $!said-modified-time;
 	has Supplier $.event_file_supplier = Supplier.new;
 	has Supply $.event_file_supply = $!event_file_supplier.Supply;
+	has Supply:U $.tick-supply;
+	has Supply:D $.tick-supply-interval = $!tick-supply.interval(1);
+	#| Bans the mask from specified channel
+	sub ban ( $e, $channel, $mask, $secs) {
+		my $ban-for = now.Rat + $secs;
+		%chan-mode{$e.server.host}{$channel}{$ban-for}{'-b'} = $mask;
+		$e.irc.send-cmd: 'MODE', "{$e.channel} +b $mask", $e.server;
+		$e.irc.send: :where($e.channel) :text("Banned for {format-time($ban-for)}");
+	}
+	sub unban ( $e, $channel, $mask) {
+		$e.irc.send-cmd: 'MODE', "{$e.channel} -b $mask", $e.server;
+	}
+	sub give-ops ( $e, $channel, $nick) {
+		$e.irc.send-cmd: 'MODE', "$channel +o $nick", $e.server;
+	}
+	sub take-ops ( $e, $channel, $nick) {
+		$e.irc.send-cmd: 'MODE', "$channel -o $nick", $e.server;
+	}
+
+	sub kick ( $e, $channel, $user, $message ) {
+		say "$channel $user $message";
+		$e.irc.send-cmd: 'KICK', "$channel $user", ":$message", $e.server;
+	}
+	#| Receives an object and checks that the sender is an op
+	sub check-ops ( $e ) {
+		if %op{$e.nick} {
+			if $e.host eq %op{$e.nick}{'hostname'} and $e.usermask eq %op{$e.nick}{'usermask'} {
+				return 1;
+			}
+		}
+		return 0;
+	}
 	#has $.kill-prom = Promise.new;
-	#signal(SIGINT).act( { $!event_file_supplier.emit( 1 );
+
 	method irc-mode-channel ($e) {
 		my @mode-pairs = $e.modes;
 		my $server = $e.server;
@@ -37,9 +74,12 @@ class said2 does IRC::Client::Plugin {
 		for @mode-pairs -> $elem {
 			$mode ~= $elem.value;
 		}
+		# %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
+		say $mode; # descriptor
+		say $mode-type; # +b
+		#if %curr-chanmode
+		#%curr-chanmode{$e.server.host}{$e.channel}{now.Rat}{$mode-type}{$mode}
 
-		say $mode;
-		say $mode-type;
 		if $mode-type ~~ /'b'/ {
 			my $user = $mode;
 			$mode ~~ m/ ^ $<nick>=( \S+ ) '!' /;
@@ -83,21 +123,30 @@ class said2 does IRC::Client::Plugin {
 	}
 	method irc-connected ($e) {
 		my Str $event-filename = $e.server.current-nick ~ '-event.json';
-		my Str $history-filename = $e.server.current-nick ~ '-history.json';
 		my Str $event-filename-bak = $event-filename ~ '.bak';
+
+		my Str $history-filename = $e.server.current-nick ~ '-history.json';
 		my Str $history-filename-bak = $history-filename ~ '.bak';
+
 		my Str $ops-filename = $e.server.current-nick ~ '-ops.json';
 		my Str $ops-filename-bak = $ops-filename ~ '.bak';
+
+		my Str $ban-filename = $e.server.current-nick ~ '-ban.json';
+		my Str $ban-filename-bak = $ban-filename ~ '.bak';
+
 		if ! %history {
-			load-file(%history, $history-filename, $e);
+			%history = load-file(%history, $history-filename, $e);
 		}
 		if ! %chan-event {
-			load-file(%chan-event, $event-filename, $e);
+			%chan-event = load-file(%chan-event, $event-filename, $e);
 		}
 		if ! %op {
-			load-file(%op, $ops-filename, $e);
+			%op = load-file(%op, $ops-filename, $e);
 		}
-			my $ops-file-watch-supply = $ops-filename.IO.watch;
+		if ! %chan-mode {
+			%chan-mode = load-file(%chan-mode, $ban-filename, $e);
+		}
+		my $ops-file-watch-supply = $ops-filename.IO.watch;
 		multi write-file ( %data, $file-bak, $file ) {
 			my $var = 0.Int;
 			my $force = 1.Int;
@@ -118,10 +167,22 @@ class said2 does IRC::Client::Plugin {
 				$last-saved = now;
 			}
 		}
-
-		$.event_file_supply.act( -> $msg { write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event, $msg.Int ) } );
-		$.event_file_supply.act( -> $msg { write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history, $msg.Int ) } );
-		#$ops-file-watch-supply.act( {
+		$.tick-supply-interval.tap( {
+			for	$e.server.channels -> $channel {
+				for %chan-mode{$e.server.host}{$channel}.keys -> $time {
+					if $time < now {
+						for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
+							say "$channel $mode $descriptor";
+							$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
+							%chan-mode{$e.server.host}{$channel}{$time}:delete;
+						}
+					}
+				}
+			}
+		 } );
+		$.event_file_supply.tap( -> $msg { write-file( %chan-event, $event-filename-bak, $event-filename, $!last-saved-event, $msg.Int ) } );
+		$.event_file_supply.tap( -> $msg { write-file( %history, $history-filename-bak, $history-filename, $!last-saved-history, $msg.Int ) } );
+		$.event_file_supply.tap( -> $msg { write-file( %chan-mode, $ban-filename-bak, $ban-filename, $!last-saved-ban, $msg.Int ) } );
 		Nil;
 	}
 	method irc-privmsg-channel ($e) {
@@ -138,97 +199,187 @@ class said2 does IRC::Client::Plugin {
 		my $timer_4 = now;
 		say "proc print: {$timer_4 - $timer_3}";
 		say "Trying to write to $!said-filename : {$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}";
-		=head2 Text Substitution
-		=para
-		s/before/after/gi functionality. Use g or i at the end to make it global or case insensitive
-
-		if $e.text ~~ m:i{ ^ 's/' (.+?) '/' (.*) '/'? } {
-			my Str $before = $0.Str;
-			my Str $after = $1.Str;
-			# We need to do this to allow Perl 5/PCRE style regex's to work as expected in Perl 6
-			# And make user input safe
-			while $before ~~ /'[' .*? <( '-' )> .*? ']'/ {
-				$before ~~ s:g/'[' .*? <( '-' )> .*? ']'/../;
-			}
-			for <- & ! " ' % = , ; : ~ ` @ { } \> \<>  ->  $old {
-				$before ~~ s:g/$old/{"\\" ~ $old}/;
-			}
-			$before ~~ s:g/'#'/'#'/;
-			$before ~~ s:g/ '$' .+ $ /\\\$/;
-			$before ~~ s:g/'[' (.*?) ']'/<[$0]>/;
-			$before ~~ s:g/' '/<.ws>/; # Replace spaces with <.ws>
-			my $options;
-			=para
-			If the last character is a slash, we assume any slashes in the $after term are literal
-			( Except for the last one )
-			If not, then anything after the last slash is a specifier
-
-			if $after !~~ s/ '/' $ // {
-				if $after ~~ s/ (.*?) '/' (.+) /$0/ {
-					$options = ~$1;
-				}
-			}
-			say "Before: {colored($before.Str, 'green')} After: {colored($after.Str, 'green')}";
-			say "Options: {colored($options.Str, 'green')}" if $options;
-			my ( $global, $case )  = False xx 2;
-			$global = ($options ~~ / g /).Bool if $options.defined;
-			$case = ($options ~~ / i /).Bool if $options.defined;
-			say "Global is $global Case is $case";
-			$before = ':i ' ~ $before if $case;
-			for %history.sort.reverse -> $pair {
-				my $sed-text = %history{$pair.key}{'text'};
-				my $sed-nick = %history{$pair.key}{'nick'};
-				my $was-sed = False;
-				$was-sed  = %history{$pair.key}{'sed'} if %history{$pair.key}{'sed'};
-				next if $sed-text ~~ m:i{ ^ 's/' };
-				next if $sed-text ~~ m{ ^ '!' };
-				if $sed-text ~~ m/<$before>/ {
-					$sed-text ~~ s:g/<$before>/$after/ if $global;
-					$sed-text ~~ s/<$before>/$after/ if ! $global;
-					irc-style($sed-nick, :color<teal>);
-					my $now = now.Rat;
-					%history{$now}{'text'} = "<$sed-nick> $sed-text";
-					%history{$now}{'nick'} = $bot-nick;
-					%history{$now}{'sed'} = True;
-					if ! $was-sed {
-						$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
+		if (^50).pick.not {
+			start {
+				my $mc = Text::Markov.new;
+				for %history.keys -> $key {
+					if %history{$key}{'text'} !~~ / ^ '!'/ {
+						say %history{$key}{'text'};
+						say qqw{ %history{$key}{'text'} };
+						$mc.feed( qqw{ %history{$key}{'text'} } );
 					}
-					else {
-						$.irc.send: :where($e.channel) :text("$sed-text");
-					}
-					last;
 				}
+				my $markov-text = $mc.read(75);
+				$markov-text ~~ s/'.'.*?$/./;
+				$.irc.send: :where($e.channel) :text($mc.read(75));
 			}
 		}
+		given $e.text {
+			=head2 Text Substitution
+			=para
+			s/before/after/gi functionality. Use g or i at the end to make it global or case insensitive
 
+			when m:i{ ^ 's/' (.+?) '/' (.*) '/'? } {
+				my Str $before = $0.Str;
+				my Str $after = $1.Str;
+				# We need to do this to allow Perl 5/PCRE style regex's to work as expected in Perl 6
+				# And make user input safe
+				while $before ~~ /'[' .*? <( '-' )> .*? ']'/ {
+					$before ~~ s:g/'[' .*? <( '-' )> .*? ']'/../;
+				}
+				for <- & ! " ' % = , ; : ~ ` @ { } \> \<>  ->  $old {
+					$before ~~ s:g/$old/{"\\" ~ $old}/;
+				}
+				$before ~~ s:g/'#'/'#'/;
+				$before ~~ s:g/ '$' .+ $ /\\\$/;
+				$before ~~ s:g/'[' (.*?) ']'/<[$0]>/;
+				$before ~~ s:g/' '/<.ws>/; # Replace spaces with <.ws>
+				my $options;
+				=para
+				If the last character is a slash, we assume any slashes in the $after term are literal
+				( Except for the last one )
+				If not, then anything after the last slash is a specifier
+
+				if $after !~~ s/ '/' $ // {
+					if $after ~~ s/ (.*?) '/' (.+) /$0/ {
+						$options = ~$1;
+					}
+				}
+				say "Before: {colored($before.Str, 'green')} After: {colored($after.Str, 'green')}";
+				say "Options: {colored($options.Str, 'green')}" if $options;
+				my ( $global, $case )  = False xx 2;
+				$global = ($options ~~ / g /).Bool if $options.defined;
+				$case = ($options ~~ / i /).Bool if $options.defined;
+				say "Global is $global Case is $case";
+				$before = ':i ' ~ $before if $case;
+				for %history.sort.reverse -> $pair {
+					my $sed-text = %history{$pair.key}{'text'};
+					my $sed-nick = %history{$pair.key}{'nick'};
+					my $was-sed = False;
+					$was-sed  = %history{$pair.key}{'sed'} if %history{$pair.key}{'sed'};
+					next if $sed-text ~~ m:i{ ^ 's/' };
+					next if $sed-text ~~ m{ ^ '!' };
+					if $sed-text ~~ m/<$before>/ {
+						$sed-text ~~ s:g/<$before>/$after/ if $global;
+						$sed-text ~~ s/<$before>/$after/ if ! $global;
+						irc-style($sed-nick, :color<teal>);
+						my $now = now.Rat;
+						%history{$now}{'text'} = "<$sed-nick> $sed-text";
+						%history{$now}{'nick'} = $bot-nick;
+						%history{$now}{'sed'} = True;
+						if ! $was-sed {
+							$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
+						}
+						else {
+							$.irc.send: :where($e.channel) :text("$sed-text");
+						}
+						last;
+					}
+				}
+			}
+			when /^'!derp'/ {
+				start {
+					my $mc = Text::Markov.new;
+					for %history.keys -> $key {
+						if %history{$key}{'text'} !~~ / ^ '!'/ {
+							say %history{$key}{'text'};
+							say qqw{ %history{$key}{'text'} };
+							$mc.feed( qqw{ %history{$key}{'text'} } );
+						}
+					}
+					my $markov-text = $mc.read(75);
+					$markov-text ~~ s/'.'.*?$/./;
+					$.irc.send: :where($e.channel) :text($mc.read(75));
+				}
+			}
+			when /^'!seen ' $<nick>=(\S+)/ {
+				my $seen-nick = ~$<nick>;
+				last if ! %chan-event{$seen-nick};
+				my $seen-time;
+				for %chan-event{$seen-nick}.sort.reverse -> $pair {
+					my $second;
+					if $pair.key eq 'mentioned' {
+						next;
+					}
+					elsif $pair.value ~~ /^ \d* '.'? \d* $/ {
+						$second = format-time($pair.value);
+					}
+					else {
+						$second = $pair.value;
+					}
+					$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
+				}
+				if %chan-event{$seen-nick}:exists {
+					irc-style($seen-nick, :color<blue>, :style<bold>);
+					$.irc.send: :where($e.channel), :text("$seen-nick $seen-time");
+				}
+			}
+			=head2 Saving Channel Event Data
+			=para The command `!SAVE` will cause the channel event data and history file to be saved.
+			Normally it will save when the data changes in memory provided it hasn't already saved
+			within the last 10 seconds
+
+			when /^'!SAVE'/ {
+				$!event_file_supplier.emit( 1 );
+			}
+			when / ^ '!unban ' (\S+) ' '? (\S+)? / {
+				my $ban-who = $0;
+				my $ban-len = $1;
+				check-ops($e);
+				if check-ops($e) {
+					unban($e, $e.channel, "$ban-who*!*@*");
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
+			when / ^ '!ban ' (\S+) ' '? (\S+)? / {
+				my $ban-who = $0;
+				my $ban-len = $1;
+				$ban-len = $ban-len > 0 ?? $ban-len !! 1800;
+				if check-ops($e) {
+					ban($e, $e.channel, "$ban-who*!*@*", $ban-len);
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
+			when / ^ '!op' ' '? (\S+)? / {
+				if check-ops($e) {
+					my $op-who = $0.defined ?? $0 !! $e.nick;
+					give-ops($e, $e.channel, $op-who);
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
+			when / ^ '!deop' ' '? (\S+)? / {
+				if check-ops($e) {
+					my $op-who = $0.defined ?? $0 !! $e.nick;
+					take-ops($e, $e.channel, $op-who);
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
+			when m{ ^ '!kick ' $<kick-who>=(\S+) ' '? $<message>=(.+)? } {
+				if check-ops($e) {
+					my $message = $<message> ?? $<message> !! "Better luck next time";
+					kick( $e, $e.channel, $<kick-who>, $message );
+				}
+				else {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+				}
+			}
+
+		}
 		%history{$now}{'text'} = $e.text;
 		%history{$now}{'nick'} = $e.nick;
 		# If any of the words we see are nicknames we've seen before, update the last time that
 		# person was mentioned
 		for $e.text.trans(';,:' => '').words { %chan-event{$e.nick}{'mentioned'}{$_} = $now if %chan-event{$_}:exists }
-		if $e.text ~~ /^'!seen ' $<nick>=(\S+)/ {
-			my $seen-nick = ~$<nick>;
-			last if ! %chan-event{$seen-nick};
-			my $seen-time;
-			for %chan-event{$seen-nick}.sort.reverse -> $pair {
-				my $second;
-				if $pair.key eq 'mentioned' {
-					next;
-				}
-				elsif $pair.value ~~ /^ \d* '.'? \d* $/ {
-					$second = format-time($pair.value);
-				}
-				else {
-					$second = $pair.value;
-				}
-				$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
-			}
-			if %chan-event{$seen-nick}:exists {
-				irc-style($seen-nick, :color<blue>, :style<bold>);
-				$.irc.send: :where($e.channel), :text("$seen-nick $seen-time");
-			}
-		}
-		elsif $e.text ~~ /^'!cmd '(.+)/ and $e.nick eq 'samcv' {
+
+		if $e.text ~~ /^'!cmd '(.+)/ and $e.nick eq 'samcv' {
 			my $cmd-out = qqx{$0};
 			say $cmd-out;
 			ansi-to-irc($cmd-out);
@@ -265,24 +416,6 @@ class said2 does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
 				}
 			}
-		}
-		elsif $e.text ~~ / ^ '!ban ' (\S+) ' '? (\S+)? / {
-
-			my $ban-who = $0;
-			my $ban-len = $1;
-			if $e.nick eq any(%op.keys) {
-				if $e.host eq %op{$e.nick}{'hostname'} and $e.usermask eq %op{$e.nick}{'usermask'} {
-					$.irc.send-cmd: 'MODE', "{$e.channel} +b $ban-who*!*@*", $e.server;
-				}
-			}
-			else {
-				$.irc.send: :where($e.channel), :text("Your nick/hostname/usermask did not match. You are not authorized to perform this action");
-			}
-		}
-		elsif $e.text ~~ / ^ '!unban ' (\S+) ' '? (\S+)? / {
-			my $ban-who = $0;
-			my $ban-len = $1;
-			$.irc.send-cmd: 'MODE', "{$e.channel} -b $ban-who*!*@*", $e.server;
 		}
 
 		=head2 Perl 6 Eval
@@ -366,20 +499,13 @@ class said2 does IRC::Client::Plugin {
 			$.irc.send: :where($e.channel), :text("{$e.nick}: Please excuse my intrusion, but please refrain from using GMT as it is deprecated, use UTC{$0} instead.");
 		}
 		# Remove old keys if history is bigger than 30 and divisible by 8
-		if %history.elems > 30 and %history.elems %% 8 {
-			for %history.sort -> $pair {
-				last if %history.elems <= 30;
-				%history{$pair.key}:delete;
-			}
-		}
-		=head2 Saving Channel Event Data
-		=para The command `!SAVE` will cause the channel event data and history file to be saved.
-		Normally it will save when the data changes in memory provided it hasn't already saved
-		within the last 10 seconds
+		#if %history.elems > 30 and %history.elems %% 8 {
+		#	for %history.sort -> $pair {
+		#		last if %history.elems <= 30;
+		#		%history{$pair.key}:delete;
+		#	}
+		#}
 
-		if $e.text ~~ /^'!SAVE'/ {
-			$!event_file_supplier.emit( 1 );
-		}
 		if $!proc ~~ Proc::Async { $working = $!proc.started } else { $working = False }
 		if ! $working or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
 			$!said-modified-time = $!said-filename.IO.modified;
@@ -433,6 +559,9 @@ sub format-time ( $time-since-epoch ) {
 	return if $time-since-epoch == 0;
 	my Str $tell_return;
 	my $tell_time_diff = now.Rat - $time-since-epoch;
+	my $sign = $tell_time_diff < 0 ?? "" !! "ago";
+	$tell_time_diff .= abs;
+	say $tell_time_diff;
 	return irc-text('[Just now]', :color<teal>) if $tell_time_diff < 1;
 	#return "[Just Now]" if $tell_time_diff < 1;
 	my %time-hash = convert-time($tell_time_diff);
@@ -441,9 +570,12 @@ sub format-time ( $time-since-epoch ) {
 		$tell_return ~= sprintf '%.2f', %time-hash{$key};
 		$tell_return ~= " $key ";
 	}
-	$tell_return ~= 'ago]';
+	$tell_return ~= "$sign]";
 	return irc-text($tell_return, :color<teal> );
 }
+sub to-sec ( $string ) {
+}
+
 
 sub load-file ( \hash, Str $filename, $e ) is rw {
 	my $hash := hash;

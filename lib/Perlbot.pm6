@@ -376,6 +376,21 @@ class said2 does IRC::Client::Plugin {
 					topic($e, $<topic>);
 				}
 			}
+			=head1 Hexidecimal/Decimal/Unicode conversions
+			=para You can convert between any of these three using the general syntax `!from2to`
+
+			=para When converting from numerical each value that is a different number is
+			delimited by spaces.  Examples are below.
+
+			=head2 Get Unicode Codepoints
+			=para Usage: `!hex2uni 🐧ABCD`
+			=para Output: `1F427 41 42 43 44`
+			=para Will get the Unicode codepoints in hex for a given string.
+
+			=head2 Convert from Unicode Codepoints to Characters
+			=para Usage: `!uni2hex 1F427 41 42 43 44`
+			=para Output: `🐧ABCD`
+
 			when / ^ '!' $<from>=(\S+) '2' $<to>=(\S+) ' ' $<string>=(.*) / {
 				$.irc.send: :where($e.channel), :text( convert-bases(:from(~$<from>), :to(~$<to>), ~$<string>) );
 			}

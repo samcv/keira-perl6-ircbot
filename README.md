@@ -61,6 +61,29 @@ Topic
 
 Sets the topic. `Usage: !topic new topic message here`.
 
+Hexidecimal/Decimal/Unicode conversions
+=======================================
+
+You can convert between any of these three using the general syntax `!from2to`
+
+When converting from numerical each value that is a different number is delimited by spaces. Examples are below.
+
+Get Unicode Codepoints
+----------------------
+
+Usage: `!hex2uni 🐧ABCD`
+
+Output: `1F427 41 42 43 44`
+
+Will get the Unicode codepoints in hex for a given string.
+
+Convert from Unicode Codepoints to Characters
+---------------------------------------------
+
+Usage: `!uni2hex 1F427 41 42 43 44`
+
+Output: `🐧ABCD`
+
 Mentioned
 ---------
 
@@ -111,26 +134,6 @@ Output: `arigatougozaimasita`
 #### Fortune
 Usage: `!fortune`
 Gets a short fortune using the Linux/Unix `fortune` program.
-
-### Hexidecimal/Decimal/Unicode conversions
-You can convert between any of these three using the general syntax `!from2to`
-
-When converting from numerical each value that is a different number is
-delimited by spaces.  Examples are below.
-
-#### Get Unicode Codepoints
-Usage: `!hex2uni 🐧ABCD`
-
-Output: `1F427 41 42 43 44`
-
-Will get the Unicode codepoints in hex for a given string.
-
-#### Convert from Unicode Codepoints to Characters
-Usage: `!uni2hex 1F427 41 42 43 44`
-
-Output: `🐧ABCD`
-
-Is the reverse of the `!u` command.
 
 #### Unicode Lookup
 Usage: `!ul 🐧`

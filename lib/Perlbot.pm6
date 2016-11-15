@@ -143,9 +143,20 @@ class said2 does IRC::Client::Plugin {
 				for %chan-mode{$e.server.host}{$channel}.keys -> $time {
 					if $time < now {
 						for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-							say "$channel $mode $descriptor";
-							$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
-							%chan-mode{$e.server.host}{$channel}{$time}:delete;
+							say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+							if $mode ~~ / ^ '-'|'+' / {
+								$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
+								%chan-mode{$e.server.host}{$channel}{$time}:delete;
+							}
+							elsif $mode eq 'tell' {
+								for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
+									%values.gist.say;
+									%values<message>.say;
+									my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
+									$.irc.send: :where($channel) :text( $formated );
+								}
+								%chan-mode{$e.server.host}{$channel}{$time}:delete;
+							}
 						}
 					}
 				}
@@ -288,6 +299,31 @@ class said2 does IRC::Client::Plugin {
 
 			when /^'!SAVE'/ {
 				$!event_file_supplier.emit( 1 );
+			}
+			=head2 Tell
+			=para Syntax: `!tell nickname message` or `!tell nickname in 10 minutes message`
+
+			when / ^ '!tell ' $<nick>=(\S+) $<in>=(in)? ' '? $<time>=(\d+)? ' '? $<units>=(\S+)? ' '? $<message>=(.*) / {
+				if $<in> and $<time> and $<units> {
+					# We have to do it in a specified number of mins
+				}
+				# We should do it the next time they speak
+				else {
+					if %chan-event{$<nick>} {
+						my $message = ~$<in> ~ ~$<time> ~ ~$<units> ~ ~$<message>;
+						# If we know about this person set it
+						say "Message to say: [{$<nick>}]";
+						my $now = now.Rat;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = $now;
+						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
+					}
+					else {
+						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
+					}
+				}
 			}
 			=head1 Operator Commands
 			=para

@@ -855,81 +855,6 @@ sub unicode_lookup {
 	return 0;
 }
 
-=head1 Convert Formats
-Formats: bin, dec, hex and uni
-Syntax: bin2uni will convert from binary to unicode characters
-=cut
-
-sub do_command {
-	my ( $who_cmd, $what_cmd ) = @_;
-	$who_cmd =~ m/(\S*)2(\S*) (.*)/;
-	my $from       = $1;
-	my $to         = $2;
-	my $to_convert = $3;
-	print_stderr("from: '$from' to: '$to' text: '$to_convert'");
-	my $hex;
-	if ( $from eq 'hex' ) {
-		$hex = $to_convert;
-	}
-	elsif ( $from eq 'dec' ) {
-		my @hexes = split $SPACE, $to_convert;
-		my $dec_string;
-		foreach my $hex_val (@hexes) {
-			$dec_string .= sprintf '%x ', $hex_val;
-		}
-		$dec_string = uc $dec_string;
-		$hex        = $dec_string;
-	}
-	elsif ( $from eq 'uni' ) {
-
-		# uni2hex
-		my @codepoints = unpack 'U*', $to_convert;
-
-		#print $codepoints[0] . "\n";
-		$hex = sprintf '%x ' x @codepoints, @codepoints;
-
-		#print $hex . "\n";
-		$hex =~ s/ $//;
-		$hex = uc $hex;
-	}
-	if ( $to eq 'hex' ) {
-		print_stderr("Hex out: $hex");
-		return $hex;
-	}
-	elsif ( $to eq 'bin' ) {
-		return;
-	}
-	elsif ( $to eq 'dec' ) {
-		my @decimals = split $SPACE, $hex;
-		my $hex_string;
-		foreach my $decimal (@decimals) {
-			$hex_string .= hex($decimal) . $SPACE;
-		}
-		return $hex_string;
-	}
-	elsif ( $to eq 'uni' ) {
-		my @unicode_array = split $SPACE, $hex;
-		my $unicode_code2;
-		foreach my $u_line (@unicode_array) {
-			$unicode_code2 .= chr hex $u_line;
-		}
-		return $unicode_code2;
-	}
-}
-
-sub get_cmd {
-	my ($get_cmd) = @_;
-	my $strip_cmd = $EMPTY;
-	my $cmd       = $EMPTY;
-	if ( $get_cmd =~ m/^!(\S*)/ ) {
-		$cmd = $1;
-	}
-	if ( $get_cmd =~ m/^!\S* (.*)/ ) {
-		$strip_cmd = $1;
-	}
-	return $cmd, $strip_cmd;
-}
-
 sub make_fullwidth {
 	my ( $fw_who, $fw_text ) = @_;
 	my $fullwidth = to_fullwidth($fw_text);
@@ -1007,27 +932,7 @@ while (<>) {
 		}
 	}
 
-	# Sed functionality. Only called if the history file is defined
-	if (   ( $body =~ m{^s/.+/}i and $bot_username ne 'skbot' )
-		or ( $body =~ m{^S/.+/} and $bot_username eq 'skbot' ) and defined $history_file )
-	{
-		next;
-		my ( $sed_who, $sed_text ) = sed_replace($body);
-		$sed_text = shorten_text($sed_text);
-		if ( defined $sed_who and defined $sed_text ) {
-			print_stderr("sed_who: $sed_who sed_text: $sed_text");
-			$sed_who = text_style( $sed_who, undef, 'teal' );
-			msg_channel("<$sed_who> $sed_text");
-		}
-	}
-	if ( $body =~ /^!\S+2\S* / ) {
-		print_stderr('I think this is a convert command');
-		my $temp5 = $body;
-		$temp5 =~ s/^!//;
-		my $convert_out = do_command($temp5);
-		msg_same_origin( $who_said, $convert_out );
-	}
-	elsif ( $body =~ /^!/ ) {
+	if ( $body =~ /^!/ ) {
 		my ( $get_cmd, $strip_cmd ) = get_cmd($body);
 		if ( defined $commands{$get_cmd} ) {
 			print_stderr("who: $who_said cmd: $strip_cmd");

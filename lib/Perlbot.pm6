@@ -20,6 +20,8 @@ class said2 does IRC::Client::Plugin {
 	has Proc::Async $.proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
 	my $promise;
 	my %chan-event;    # %chan-event{$e.nick}{join/part/quit/host/usermask}
+	# Describes planned future events. Mode can be '-b' to unban after a specified amount of time.
+	# If mode is `msg` the descriptor will be their nickname, whose value is set to the message.
 	my %chan-mode;     # %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
 	my %curr-chanmode; # %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
 	my %history;       # %history{$now}{text/nick/sed}
@@ -300,16 +302,26 @@ class said2 does IRC::Client::Plugin {
 			the person once this time period is up, as well as printing to the channel how long the
 			user has been banned for. Usage: `!ban nick`.
 
-			when / ^ '!ban ' (\S+) ' '? (\S+)? / {
+			when / ^ '!ban ' (\S+) ' '? (.+) / {
+				if ! check-ops($e) {
+					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+					last;
+				}
+				say "e text: [{$e.text}]";
 				my $ban-who = ~$0;
 				my $ban-len = ~$1;
-				$ban-len = $ban-len.defined ?? string-to-secs(~$ban-len) !! 1800;
-				if check-ops($e) {
-					ban($e, "$ban-who*!*@*", $ban-len);
+				if $ban-len.defined {
+					$ban-len = string-to-secs($ban-len);
+					if ! $ban-len {
+						my $unrec-time = "Unrecognized time format. Use !ban nick X ms, sec(s), second(s), min(s), minutes(m), hour(s), week(s), month(s) or year(s)";
+						$.irc.send: :where($e.channel), :text($unrec-time);
+						last;
+					}
 				}
 				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+					$ban-len = string-to-secs("30 minutes") if ! $ban-len.defined;
 				}
+				ban($e, "$ban-who*!*@*", $ban-len);
 			}
 			=head2 Unban
 			=para `Usage: !unban nick`
@@ -558,13 +570,30 @@ sub from-secs ( $secs-since-epoch is copy ) is export  {
 	return %time-hash;
 }
 sub string-to-secs ( Str $string ) is export {
-	for %secs-per-unit.kv -> $unit, $secs {
-		if / $<num>=(\d+) <$unit>? / {
-			say "matched unit $unit";
-			return $secs * $<num>;
+	my %secs-per-string = :years<15778800>, :year<15778800>, :months<1314900>,
+                          :month<1314900>, :weeks<302400>, :week<302400>, :days<43200>,
+                          :hours<3600>, :mins<60>, :minutes<60>, :minute<60>, :secs<1>,
+                          :seconds<1>, :second<1>,
+                          :ms<0.001>, :milliseconds<0.001>;
+	say "string-to-secs got Str: [$string]";
+	if $string ~~ / (\d+) ' '? (\S+) / {
+		my $in-num = ~$0;
+		my $in-unit = ~$1;
+		say "in-num: [$in-num] in-unit: [$in-unit]";
+		for %secs-per-string.kv -> $unit, $secs {
+			say "checking unit: [$unit]";
+			if $unit eq $in-unit {
+				say "Unit [$unit]";
+				return $secs * $in-num;
+			}
 		}
 	}
+	else {
+		say "Didn't match regex";
+		return Nil;
+	}
 }
+
 sub format-time ( $time-since-epoch ) {
 	return if $time-since-epoch == 0;
 	my Str $tell_return;

@@ -1,6 +1,6 @@
 use v6;
 sub convert-bases ( Str $string, Str :$from, Str :$to ) returns Str is export {
-	say $string;
+	say "convert-bases got: [$string]";
 	my @nums;
 	my %mapping = :decimal<10>, :dec<10>, :binary<2>, :bin<2>, :octal<8>, :oct<8>, :hexadecimal<16>, :hex<16>;
 	say %mapping.perl;

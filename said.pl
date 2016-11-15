@@ -23,25 +23,11 @@ binmode STDERR, ':encoding(UTF-8)'
 	or print_stderr("Failed to set binmode on STDERR, Error $ERRNO");
 
 our $VERSION = 0.7;
-my $repo_url = 'https://gitlab.com/samcv/perlbot';
+my $repo_url = 'https://github.com/samcv/perlbot';
 my $repo_formatted = text_style( $repo_url, 'underline', 'blue' );
 
 my ( $history_file, $tell_file, $channel_event_file );
 my $history_file_length = 30;
-
-my $help_text
-	= 'Supports s/before/after (sed), !tell, !fortune and responds to .bots with bot '
-	. 'info and repo url. !u to get unicode hex codepoints for a string. '
-	. '!unicode to convert hex codepoints to unicode. !tohex and !fromhex '
-	. '!transliterate to transliterate most languages into romazied text. '
-	. '!tell or !tell in 1s/m/h/d to tell somebody a message triggered on them '
-	. 'speaking. !seen to get last spoke/join/part of a user. s/before/after '
-	. 'perl style regex text substitution. !ud to get Urban Dictionary '
-	. 'definitions. Also posts the page title of any website pasted in channel '
-	. 'and if you address the bot by name and use a ? it will answer the '
-	. 'question. Supports !perl to evaluate perl code. !rev or !reverse to '
-	. 'reverse text. !frombin to convert from binary to hex.'
-	. "  For more info go to $repo_formatted";
 
 my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
 my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell them"';
@@ -709,51 +695,6 @@ sub replace_newline {
 	return $multi_line_string;
 }
 
-sub to_symbols_newline {
-	my ($multi_line_string) = @_;
-	$multi_line_string =~ s/\n/␤/g;
-	$multi_line_string =~ s/\r/↵/g;
-	$multi_line_string =~ s/\t/↹/g;
-
-	return $multi_line_string;
-}
-
-sub to_symbols_ctrl {
-	my ($multi_line_string) = @_;
-
-	foreach my $ascii ( keys %ctrl_codes ) {
-		if ( $ascii eq 'NULL' ) {
-			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\0/g;
-		}
-		elsif ( $ascii eq 'DEL' ) {
-			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\DEL/g;
-		}
-		elsif ( $ascii eq 'ESC' ) {
-			$multi_line_string =~ s/$ctrl_codes{$ascii}/\\ESC/g;
-		}
-		else {
-			$multi_line_string =~ s/$ctrl_codes{$ascii}/^$ascii/g;
-		}
-	}
-
-	my $ctrl_lb = chr 27;
-	my $ctrl_bs = chr 28;
-	my $ctrl_rb = chr 29;
-	my $ctrl_ca = chr 30;
-	my $ctrl_us = chr 31;
-
-	#my $ctrl_qm = chr 127;
-	$multi_line_string =~ s/$ctrl_lb/^[/g;
-	$multi_line_string =~ s/$ctrl_bs/^\\/g;
-	$multi_line_string =~ s/$ctrl_rb/^]/g;
-	$multi_line_string =~ s/$ctrl_ca/^^/g;
-	$multi_line_string =~ s/$ctrl_us/^_/g;
-
-	# $multi_line_string =~ s/$ctrl_qm/^?/g;
-
-	return $multi_line_string;
-}
-
 sub get_fortune {
 	my ( $fortune_who, $fortune_caller_text ) = @_;
 	my $fortune;
@@ -868,12 +809,6 @@ sub make_fullwidth {
 	return 0;
 }
 
-sub print_help {
-	my ( $help_who, $help_body ) = @_;
-	msg_channel($help_text) and return 1;
-	return 0;
-}
-
 my %commands = (
 	'transliterate' => \&transliterate,
 	'tell'          => \&tell_nick_command,
@@ -888,7 +823,6 @@ my %commands = (
 	'lc'            => \&lowercase,
 	'lcirc'         => \&lowercase_irc,
 	'ud'            => \&urban_dictionary,
-	'help'          => \&print_help,
 	'action'        => \&format_action,
 );
 print_stderr("starting format #channel >botusername< <who> message");
@@ -932,18 +866,9 @@ while (<>) {
 		}
 	}
 
-	if ( $body =~ /^!/ ) {
-		my ( $get_cmd, $strip_cmd ) = get_cmd($body);
-		if ( defined $commands{$get_cmd} ) {
-			print_stderr("who: $who_said cmd: $strip_cmd");
-			$commands{$get_cmd}( $who_said, $strip_cmd, $channel, $bot_username );
-		}
-	}
-	else {
-		# Find and get URL's page title
-		my ( $one, $two ) = find_url($body);
-		url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
-	}
+	# Find and get URL's page title
+	my ( $one, $two ) = find_url($body);
+	url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
 
 	if ( $body =~ /\s:[(]\s*$/ or $body =~ /^\s*:[(]\s*$/ ) {
 		my @cheer = ( q/Turn that frown upside down :)/, q/Cheer up! Don't be so sad!/ );

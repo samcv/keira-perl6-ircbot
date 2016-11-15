@@ -22,8 +22,8 @@ binmode STDOUT, ':encoding(UTF-8)'
 binmode STDERR, ':encoding(UTF-8)'
 	or print_stderr("Failed to set binmode on STDERR, Error $ERRNO");
 
-our $VERSION = 0.7;
-my $repo_url = 'https://github.com/samcv/perlbot';
+our $VERSION = 0.9;
+my $repo_url = 'https://github.com/samcv/keira-perl6-ircbot';
 my $repo_formatted = text_style( $repo_url, 'underline', 'blue' );
 
 my ( $history_file, $tell_file, $channel_event_file );

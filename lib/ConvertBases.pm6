@@ -35,8 +35,3 @@ sub convert-bases ( Str $string, Str :$from, Str :$to ) returns Str is export {
 	$output;
 }
 # vim: noet
-
-#sub MAIN ( Str $option, Str $string ) {
-#	$option ~~ / $<from>=(\S+) 2 $<to>=(\S+) /;
-#	say convert-bases(~$string, :from(~$<from>), :to(~$<to>));
-#}

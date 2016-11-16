@@ -170,8 +170,11 @@ class said2 does IRC::Client::Plugin {
 				write-file( %chan-event, $event-filename, $!last-saved-event, $msg.Int);
 				write-file( %history, $history-filename, $!last-saved-history, $msg.Int);
 				write-file( %chan-mode, $ban-filename, $!last-saved-ban, $msg.Int);
+				say "Done saving";
+				exit 0 if $msg >= 3;
 			}
 		} );
+		signal(SIGINT).tap({ $!event_file_supplier.emit( 3 ) } );
 		start {
 			$markov = Text::Markov.new;
 			for %history.keys -> $key {
@@ -330,6 +333,10 @@ class said2 does IRC::Client::Plugin {
 				if %chan-event{$<nick>} {
 					my $message = ~$<message>;
 					my $got = string-to-secs("$<time> $<units>");
+					if !$got or $<nick> eq 'in' {
+						$.irc.send: :where($e.channel), :text("Syntax: !tell nick message or !tell nick in 10 units $unrec-time");
+						last;
+					}
 					# If we know about this person set it
 					my $now = now.Rat + $got;
 					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
@@ -704,7 +711,7 @@ multi write-file ( %data, $file, $last-saved is rw, Int $force ) {
 	if now - $last-saved > 10 or !$last-saved.defined or $force {
 		my $file-bak-io = IO::Path.new($file-bak);
 		try {
-			say colored("Trying to update $file data", 'blue');
+			#say colored("Trying to update $file data", 'blue');
 			spurt $file-bak, to-json( %data );
 			# from-json will throw an exception if it can't process the file
 			# we just wrote

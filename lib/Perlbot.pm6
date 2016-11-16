@@ -188,7 +188,7 @@ class said2 does IRC::Client::Plugin {
 		%chan-event{$e.nick}{'host'} = $e.host;
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
 		my $timer_2 = now;
-		my $working;
+		my $running;
 		my $timer_3 = now;
 
 		my $timer_4 = now;
@@ -552,20 +552,19 @@ class said2 does IRC::Client::Plugin {
 		start { markov-feed($e.text) };
 		if $!proc ~~ Proc::Async {
 			if $!proc.started {
-				$working = True if $!proc.kill(0)
+				$running = True if $promise.status == Planned;
 			}
 			else {
-				$working = False;
+				$running = False;
 			}
 		}
-		if ! $working or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
+		if ! $running or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
 			$!said-modified-time = $!said-filename.IO.modified;
-			if $working {
+			if $running {
 				note "trying to kill $!said-filename";
 				$!proc.say("KILL");
 				$!proc.close-stdin;
 				$!proc.kill(9);
-				#try { $promise.result; CATCH { note "$!said-filename exited incorrectly! THIS IS BAD"; $!proc = Nil; } }
 			}
 			note "Starting $!said-filename";
 			$!proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );

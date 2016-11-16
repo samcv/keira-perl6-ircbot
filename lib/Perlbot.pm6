@@ -73,14 +73,17 @@ class said2 does IRC::Client::Plugin {
 	}
 	sub markov ( Int $length ) returns Str {
 			my $markov-text = $markov.read(75);
-			#$markov-text ~~ s/'.'.*?$/./;
+			$markov-text ~~ s:g/(\s+)('.'|'!'|':'|';'|',') /$1/;
 			$markov-text.Str;
 	}
-	multi markov-feed ( List $list ) {
-		$markov.feed( $list );
-	}
-	multi markov-feed ( Str $string ) {
-		$markov.feed( qqw{ $string } );
+	multi markov-feed ( Str $string is copy ) {
+		#say "Got string: [$string]";
+		if $string !~~ / ^ '!'|'s/' / {
+			$string ~~ s/$/ /;
+			$string ~~ s:g/(\S+) ('.'|'!'|':'|';'|',') ' '/ $0 $1 /;
+			#say "Processed string: [$string]";
+			$markov.feed( $string.words );
+		}
 	}
 	method irc-mode-channel ($e) {
 		my @mode-pairs = $e.modes;
@@ -172,9 +175,7 @@ class said2 does IRC::Client::Plugin {
 		start {
 			$markov = Text::Markov.new;
 			for %history.keys -> $key {
-				if %history{$key}{'text'} !~~ / ^ '!'|'s/'/ {
-					markov-feed( %history{$key}{'text'} );
-				}
+				markov-feed( %history{$key}{'text'} );
 			}
 		}
 		my $ops-file-watch-supply = $ops-filename.IO.watch; # TODO
@@ -214,7 +215,7 @@ class said2 does IRC::Client::Plugin {
 		}
 		say "proc print: {$timer_4 - $timer_3}";
 		say "Trying to write to $!said-filename : {$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}";
-		if (^50).pick.not {
+		if (^30).pick.not {
 			start { $.irc.send: :where($e.channel) :text( markov(75) ) }
 		}
 		given $e.text {
@@ -592,7 +593,7 @@ class said2 does IRC::Client::Plugin {
 		#		%history{$pair.key}:delete;
 		#	}
 		#}
-		start { markov-feed($e.text) };
+		start { markov-feed( $e.text ) }
 		if $!proc ~~ Proc::Async {
 			if $!proc.started {
 				$running = True if $promise.status == Planned;

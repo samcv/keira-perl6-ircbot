@@ -26,13 +26,11 @@ our $VERSION = 0.9;
 my $repo_url = 'https://github.com/samcv/keira-perl6-ircbot';
 my $repo_formatted = text_style( $repo_url, 'underline', 'blue' );
 
-my ( $history_file, $tell_file, $channel_event_file );
+my ( $history_file, $channel_event_file );
 my $history_file_length = 30;
 
-my $tell_help_text    = 'Usage: !tell nick "message to tell them"';
-my $tell_in_help_text = 'Usage: !tell in 100d/h/m/s nickname "message to tell them"';
-my $EMPTY             = q{};
-my $SPACE             = q{ };
+my $EMPTY = q{};
+my $SPACE = q{ };
 
 my %ctrl_codes = (
 	'NULL' => chr 0,
@@ -145,7 +143,6 @@ sub var_ne {
 
 sub username_defined_pre {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
-	$tell_file = $bot_username . '_tell.txt';
 	utf8::decode($bot_username);
 
 	#if ( var_ne( $channel, 'msg' ) ) { write_to_history($who_said, $body) }
@@ -258,151 +255,12 @@ sub format_time {
 	return $tell_return;
 }
 
-sub process_tell_nick {
-	my ( $tell_write_fh, $tell_who_spoke, @tell_lines ) = @_;
-	my $has_been_said = 0;
-	my $tell_return;
-	my ( $time_told, $time_to_tell, $who_told, $who_to_tell, $what_to_tell );
-	foreach my $tell_line (@tell_lines) {
-		chomp $tell_line;
-
-		if ( $tell_line =~ m/^(\d+) (\d+) <(\S+?)> >(\S+?)< (.*)/ ) {
-			$time_told    = $1;
-			$time_to_tell = $2;
-			$who_told     = $3;
-			$who_to_tell  = $4;
-			$what_to_tell = $5;
-			chomp $what_to_tell;
-		}
-
-	#print_stderr("time told $1 time to tell $2 who told $3 who to tell: $who_to_tell what: $what_to_tell");
-		my $said_time = time;
-		if (  !$has_been_said
-			&& $time_to_tell < $said_time
-			&& $tell_who_spoke =~ /\Q$who_to_tell\E/i )
-		{
-			$tell_return
-				= "$who_to_tell,"
-				. $SPACE
-				. text_style( "$who_told said:", 'bold', 'blue' )
-				. $SPACE
-				. $what_to_tell
-
-				#. style_table('reset')
-				. $SPACE . text_style( format_time($time_told), undef, 'teal' );
-			$has_been_said = 1;
-
-			#print_stderr("TELLRETURN'''$tell_return'''");
-		}
-		else {
-			print {$tell_write_fh} "$tell_line\n";
-		}
-	}
-	if ( defined $tell_return ) {
-		return $tell_return;
-	}
-	return;
-}
-
-sub tell_nick {
-	my ($tell_who_spoke) = @_;
-
-	# Read
-	open my $tell_read_fh, '<', "$tell_file"
-		or print_stderr("Could not open $tell_file for read, Error $ERRNO");
-	binmode $tell_read_fh, ':encoding(UTF-8)'
-		or print_stderr("Failed to set binmode on tell_read_fh, Error, $ERRNO");
-	my @tell_lines = <$tell_read_fh>;
-	close $tell_read_fh
-		or print_stderr("Could not close $tell_file, Error $ERRNO");
-
-	# Write
-	open my $tell_write_fh, '>', "$tell_file"
-		or print_stderr("Could not open $tell_file for write, Error $ERRNO");
-	binmode $tell_write_fh, ':encoding(UTF-8)'
-		or print_stderr("Failed to set binmode on tell_fh, Error $ERRNO");
-	my $tell_return = process_tell_nick( $tell_write_fh, $tell_who_spoke, @tell_lines );
-
-	close $tell_write_fh
-		or print_stderr("Could not close tell_fh, Error $ERRNO");
-	if ( defined $tell_return ) {
-		return $tell_return;
-	}
-	else {
-		return;
-	}
-}
-
 sub transliterate {
 	my ( $transliterate_who, $transliterate_said ) = @_;
 	my $transliterate_return = unidecode($transliterate_said);
 	msg_same_origin( $transliterate_who, $transliterate_return ) and return 1;
 
 	return 0;
-}
-
-sub tell_nick_command {
-	my ( $tell_who_spoke, $tell_nick_body, $channel, $bot_username ) = @_;
-	print_stderr("who: $tell_who_spoke body $tell_nick_body chan $channel");
-	chomp $tell_nick_body;
-	my $tell_remind_time         = 0;
-	my $tell_nick_command_return = 0;
-	my $said_time                = time;
-	if ( $tell_nick_body !~ /^\S+ \S+/ or $tell_nick_body =~ /^help/ ) {
-		msg_same_origin( $tell_who_spoke, $tell_help_text ) and return 1;
-	}
-	elsif ( $tell_nick_body =~ /^in/ and $tell_nick_body !~ /^in \d+[smhd] / ) {
-		msg_same_origin( $tell_who_spoke, $tell_in_help_text ) and return 1;
-	}
-	else {
-		my $tell_who         = $tell_nick_body;
-		my $tell_text        = $tell_nick_body;
-		my $tell_remind_when = $tell_nick_body;
-		if ( $tell_nick_body =~ m/^in (\S+) (\S+) (.*)/ ) {
-			$tell_remind_when = $1;
-			$tell_who         = $2;
-			$tell_text        = $3;
-
-			if ( $tell_remind_when =~ s/^(\d+)s$/$1/ ) {
-				unidecode($tell_remind_when);
-				$tell_remind_time = $tell_remind_when + $said_time;
-			}
-			elsif ( $tell_remind_when =~ s/^(\d+)m$/$1/ ) {
-				unidecode($tell_remind_when);
-				$tell_remind_time = $tell_remind_when * ONE_MINUTE + $said_time;
-			}
-			elsif ( $tell_remind_when =~ s/^(\d+)h$/$1/ ) {
-				unidecode($tell_remind_when);
-				$tell_remind_time = $tell_remind_when * ONE_HOUR + $said_time;
-			}
-			elsif ( $tell_remind_when =~ s/^(\d+)d$/$1/ ) {
-				unidecode($tell_remind_when);
-				$tell_remind_time = $tell_remind_when * ONE_DAY + $said_time;
-			}
-
-		}
-		else {
-			$tell_who =~ s/^(\S+) .*/$1/;
-			$tell_text =~ s/^\S+ (.*)/$1/;
-		}
-		print_stderr( "tell_nick_time_called: $said_time tell_remind_time: "
-				. "$tell_remind_time tell_who: $tell_who tell_text: $tell_text" );
-
-		open my $tell_fh, '>>', "$tell_file"
-			or print_stderr("Could not open $tell_file, Error $ERRNO");
-		binmode $tell_fh, ':encoding(UTF-8)'
-			or print_stderr("Failed to set binmode on tell_fh, Error, $ERRNO");
-		if ( print {$tell_fh} "$said_time $tell_remind_time <$tell_who_spoke> >$tell_who< $tell_text\n" ) {
-			$tell_nick_command_return = 1;
-			private_message( $tell_who_spoke, "I will relay the message to $tell_who." );
-		}
-		else {
-			print_stderr("Failed to append to $tell_file, Error $ERRNO");
-		}
-		close $tell_fh
-			or print_stderr("Could not close $tell_file, Error $ERRNO");
-	}
-	return $tell_nick_command_return;
 }
 
 sub find_url {
@@ -650,21 +508,6 @@ sub addressed {
 sub username_defined_post {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
 
-	if ( -f $tell_file ) {
-
-		#print_stderr( localtime(time) . "\tCalling tell_nick" );
-		my ($tell_to_say) = tell_nick($who_said);
-		if ( defined $tell_to_say ) {
-
-			#print_stderr('Tell to say line next');
-			#print_stderr("'''$tell_to_say''' TELL TO SAY");
-			msg_same_origin( $who_said, $tell_to_say );
-			my ( $one, $two ) = find_url($tell_to_say);
-			url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
-
-		}
-	}
-
 	# Trunicate history file only if the bot's username is set.
 	return;
 }
@@ -809,9 +652,20 @@ sub make_fullwidth {
 	return 0;
 }
 
+sub get_cmd {
+	my ($get_cmd) = @_;
+	my $strip_cmd = $EMPTY;
+	my $cmd       = $EMPTY;
+	if ( $get_cmd =~ m/^!(\S*)/ ) {
+		$cmd = $1;
+	}
+	if ( $get_cmd =~ m/^!\S* (.*)/ ) {
+		$strip_cmd = $1;
+	}
+	return $cmd, $strip_cmd;
+}
 my %commands = (
 	'transliterate' => \&transliterate,
-	'tell'          => \&tell_nick_command,
 	'fullwidth'     => \&make_fullwidth,
 	'fw'            => \&make_fullwidth,
 	'reverse'       => \&reverse_text,
@@ -863,6 +717,13 @@ while (<>) {
 		}
 		else {
 			addressed( $who_said, $body );
+		}
+	}
+	if ( $body =~ /^!/ ) {
+		my ( $get_cmd, $strip_cmd ) = get_cmd($body);
+		if ( defined $commands{$get_cmd} ) {
+			print_stderr("who: $who_said cmd: $strip_cmd");
+			$commands{$get_cmd}( $who_said, $strip_cmd, $channel, $bot_username );
 		}
 	}
 

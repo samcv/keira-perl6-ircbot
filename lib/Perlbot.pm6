@@ -148,10 +148,10 @@ class said2 does IRC::Client::Plugin {
 								$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
 								%chan-mode{$e.server.host}{$channel}{$time}:delete;
 							}
-							elsif $mode eq 'tell' {
+							elsif $mode eq 'remind' {
 								for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
-									%values.gist.say;
-									%values<message>.say;
+									#%values.gist.say;
+									#%values<message>.say;
 									my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
 									$.irc.send: :where($channel) :text( $formated );
 								}
@@ -181,6 +181,8 @@ class said2 does IRC::Client::Plugin {
 		Nil;
 	}
 	method irc-privmsg-channel ($e) {
+		my $unrec-time = "Unrecognized time format. Use X ms, sec(s), second(s), min(s), minutes(s), hour(s), week(s), month(s) or year(s)";
+
 		my $bot-nick = $e.server.current-nick;
 		my $now = now.Rat;
 		my $timer_1 = now;
@@ -192,6 +194,24 @@ class said2 does IRC::Client::Plugin {
 		my $timer_3 = now;
 
 		my $timer_4 = now;
+		for	$e.server.channels -> $channel {
+			for %chan-mode{$e.server.host}{$channel}.keys -> $time {
+				if $time < now {
+					for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
+						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+						if $mode eq 'tell' {
+							for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
+								#%values.gist.say;
+								#%values<message>.say;
+								my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
+								$.irc.send: :where($channel) :text( $formated );
+							}
+							%chan-mode{$e.server.host}{$channel}{$time}:delete;
+						}
+					}
+				}
+			}
+		}
 		say "proc print: {$timer_4 - $timer_3}";
 		say "Trying to write to $!said-filename : {$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}";
 		if (^50).pick.not {
@@ -302,28 +322,52 @@ class said2 does IRC::Client::Plugin {
 			}
 			=head2 Tell
 			=para Syntax: `!tell nickname message` or `!tell nickname in 10 minutes message`
+			=para Will tell the specified nickname the message the next time they speak in channel
 
-			when / ^ '!tell ' $<nick>=(\S+) $<in>=(in)? ' '? $<time>=(\d+)? ' '? $<units>=(\S+)? ' '? $<message>=(.*) / {
-				if $<in> and $<time> and $<units> {
-					# We have to do it in a specified number of mins
+			when / ^ '!tell ' $<nick>=(\S+) ' in ' $<time>=(\d+) ' ' $<units>=(\S+) ' '? $<message>=(.*) / {
+				say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
+				if %chan-event{$<nick>} {
+					my $message = ~$<message>;
+					my $got = string-to-secs("$<time> $<units>");
+					# If we know about this person set it
+					my $now = now.Rat + $got;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+					$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
+				}
+				else {
+					$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
 				}
 				# We should do it the next time they speak
-				else {
-					if %chan-event{$<nick>} {
-						my $message = ~$<in> ~ ~$<time> ~ ~$<units> ~ ~$<message>;
-						# If we know about this person set it
-						say "Message to say: [{$<nick>}]";
-						my $now = now.Rat;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = $now;
-						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
-					}
-					else {
-						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
-					}
+
+			}
+			when / ^ '!tell ' $<nick>=(\S+) ' '$<message>=(.*) / {
+				say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
+				if %chan-event{$<nick>} {
+					my $message = ~$<message>;
+					my $got = string-to-secs("$<time> $<units>");
+					# If we know about this person set it
+					my $now = now.Rat + $got;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
+					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+					$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 				}
+				else {
+					$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
+				}
+				if $<time> and $<units> {
+					# We have to do it in a specified number of mins
+					my $got = string-to-secs("$<time> $<units>");
+					say $got;
+					$.irc.send: :where($e.channel), :text("{$e.nick}: $got");
+
+				}
+				# We should do it the next time they speak
+
 			}
 			=head1 Operator Commands
 			=para
@@ -349,7 +393,6 @@ class said2 does IRC::Client::Plugin {
 				if $ban-len.defined {
 					$ban-len = string-to-secs($ban-len);
 					if ! $ban-len {
-						my $unrec-time = "Unrecognized time format. Use !ban nick X ms, sec(s), second(s), min(s), minutes(m), hour(s), week(s), month(s) or year(s)";
 						$.irc.send: :where($e.channel), :text($unrec-time);
 						last;
 					}

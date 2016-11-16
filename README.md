@@ -26,6 +26,13 @@ Saving Channel Event Data
 
 The command `!SAVE` will cause the channel event data and history file to be saved. Normally it will save when the data changes in memory provided it hasn't already saved within the last 10 seconds
 
+Tell
+----
+
+Syntax: `!tell nickname message` or `!tell nickname in 10 minutes message`
+
+Will tell the specified nickname the message the next time they speak in channel
+
 Operator Commands
 =================
 
@@ -114,15 +121,6 @@ Evaluates the requested Perl 5 code and returns the output of standard out and e
 o
 ## Commands performed by Perl 5 in `said.pl`
 All of these commands below have not been reimplemented in Perl 6 yet.
-#### Tell
-Usage: `!tell nickname Message to tell them`
-
-This will tell that person the message the next time they speak in the channel or private message the bot.
-
-#### Tell in
-Usage: `!tell in 1m/h/d Message to tell them`
-
-This will tell that person the message after that many minutes/hours/days that you specify.  It is triggered when they speak in the channel or private message the bot.
 
 #### Transliterate
 Usage: `!transliterate ありがとうございました`

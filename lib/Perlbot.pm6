@@ -493,6 +493,15 @@ class said2 does IRC::Client::Plugin {
 			when / ^ '!' $<from>=(\S+) '2' $<to>=(\S+) ' ' $<string>=(.*) / {
 				$.irc.send: :where($e.channel), :text( convert-bases(:from(~$<from>), :to(~$<to>), ~$<string>) );
 			}
+			when / ^ '!rev ' $<torev>=(.*) / {
+				$.irc.send: :where($e.channel), :text($<torev>.flip);
+			}
+			when / ^ '!uc ' $<touc>=(.*) / {
+				$.irc.send: :where($e.channel), :text($<touc>.uc);
+			}
+			when / ^ '!lc ' $<tolc>=(.*) / {
+				$.irc.send: :where($e.channel), :text($<tolc>.lc);
+			}
 
 		}
 		# Do this after Text Substitutio

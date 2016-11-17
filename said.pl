@@ -114,22 +114,6 @@ sub msg_same_origin {
 	return 0;
 }
 
-sub write_to_history {
-	my ( $who_said, $body ) = @_;
-
-	# Add line to history file
-	open my $history_fh, '>>', "$history_file"
-		or print_stderr("Could not open history file, Error $ERRNO");
-	binmode $history_fh, ':encoding(UTF-8)'
-		or print_stderr("Failed to set binmode on history_fh, Error $ERRNO");
-
-	print {$history_fh} "<$who_said> $body\n"
-		or print_stderr("Failed to append to $history_file, Error $ERRNO");
-	close $history_fh
-		or print_stderr("Could not close $history_file, Error $ERRNO");
-	return;
-}
-
 sub var_ne {
 	my ( $var_ne_var, $var_ne_test ) = @_;
 	if ( !defined $var_ne_var ) {
@@ -145,8 +129,6 @@ sub username_defined_pre {
 	my ( $who_said, $body, $channel, $bot_username ) = @_;
 	utf8::decode($bot_username);
 
-	#if ( var_ne( $channel, 'msg' ) ) { write_to_history($who_said, $body) }
-
 	return;
 }
 
@@ -154,35 +136,6 @@ sub format_action {
 	my ( $action_who, $action_text ) = @_;
 	$action_text = "\cA" . 'ACTION' . $SPACE . $action_text . "\cA";
 	msg_same_origin( $action_who, $action_text ) and return 1;
-	return 0;
-}
-
-sub from_binary {
-	my ( $bin_who, $bin_said ) = @_;
-	my @hexes = split $SPACE, $bin_said;
-	my $dec_string;
-	foreach my $hex (@hexes) {
-		$dec_string .= sprintf( '%X', oct("0b$hex") ) . $SPACE;
-	}
-	msg_same_origin( $bin_who, $dec_string ) and return 1;
-	return 0;
-}
-
-sub reverse_text {
-	my ( $rev_who, $rev_said ) = @_;
-	$rev_said = reverse $rev_said;
-	msg_same_origin( $rev_who, $rev_said );
-}
-
-sub lowercase {
-	my ( $lc_who, $lc_said ) = @_;
-	msg_same_origin( $lc_who, lc $lc_said ) and return 1;
-	return 0;
-}
-
-sub uppercase {
-	my ( $uc_who, $uc_said ) = @_;
-	msg_same_origin( $uc_who, uc $uc_said ) and return 1;
 	return 0;
 }
 
@@ -626,13 +579,9 @@ my %commands = (
 	'transliterate' => \&transliterate,
 	'fullwidth'     => \&make_fullwidth,
 	'fw'            => \&make_fullwidth,
-	'reverse'       => \&reverse_text,
-	'rev'           => \&reverse_text,
 	'unicodelookup' => \&u_lookup,
 	'ul'            => \&unicode_lookup,
-	'uc'            => \&uppercase,
 	'ucirc'         => \&uppercase_irc,
-	'lc'            => \&lowercase,
 	'lcirc'         => \&lowercase_irc,
 	'action'        => \&format_action,
 );

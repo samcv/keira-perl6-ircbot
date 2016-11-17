@@ -573,48 +573,6 @@ sub get_fortune {
 	return 0;
 }
 
-sub urban_dictionary {
-	my ( $ud_who, $ud_request ) = @_;
-	my @ud_args = ( 'ud.pl', $ud_request );
-	my $ud_pid = open my $UD_OUT, '-|', 'perl', @ud_args
-		or print_stderr("Could not open UD pipe, Error $ERRNO");
-
-	# Don't set binmode on Urban Dictionary requests or not ASCII
-	# Symbols will not be properly decoded
-	my $ud_line = do { local $INPUT_RECORD_SEPARATOR = undef; <$UD_OUT> };
-
-	#$ud_line = try_decode($ud_line);
-	$ud_line = replace_newline($ud_line);
-	if ( $ud_line =~ m{%DEF%(.*)%EXA%(.*)} ) {
-		my $definition = $1;
-		my $example    = $2;
-
-		$definition = sanitize($definition);
-		$definition = shorten_text($definition);
-
-		$example = sanitize($example);
-		$example = shorten_text($example);
-		$example = text_style( $example, 'italic' );
-
-		$ud_request = ucfirst $ud_request;
-		$ud_request = text_style( $ud_request, 'bold' );
-
-		my $ud_one_line = "$ud_request: $definition $example";
-		if ( length $ud_one_line > 300 ) {
-			msg_same_origin( $ud_who, "$ud_request: $definition" );
-			msg_same_origin( $ud_who, $example ) and return 1;
-		}
-		else {
-			msg_same_origin( $ud_who, $ud_one_line ) and return 1;
-		}
-	}
-	else {
-		print_stderr("Urban Dictionary didn't match regex");
-		msg_same_origin( $ud_who, 'No definition found' );
-	}
-	return 0;
-}
-
 sub u_lookup {
 	my ( $u_lookup_who, $u_lookup_code ) = @_;
 	if ( $u_lookup_code =~ m/^(\S+)/ ) {
@@ -676,7 +634,6 @@ my %commands = (
 	'ucirc'         => \&uppercase_irc,
 	'lc'            => \&lowercase,
 	'lcirc'         => \&lowercase_irc,
-	'ud'            => \&urban_dictionary,
 	'action'        => \&format_action,
 );
 print_stderr("starting format #channel >botusername< <who> message");

@@ -4,6 +4,7 @@ use IRC::Client;
 use Terminal::ANSIColor;
 use lib 'lib';
 use Perlbot;
+use UrbanDictionary;
 
 sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-address,
            Int $server_port, Str $channel, $debug = False ) {
@@ -14,7 +15,8 @@ sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-addres
 		host     => $server-address,
 		channels => $channel,
 		debug    => $debug.Bool,
-		plugins  => said2.new);
+		plugins  => (said2.new, urban-dictionary.new)
+	);
 	$irc.run;
 }
 # vim: noet

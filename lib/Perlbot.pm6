@@ -622,7 +622,7 @@ class said2 does IRC::Client::Plugin {
 			$!proc.stdout.lines.tap( {
 					my $line = $_;
 					say $line;
-					if $line ~~ s/^\%// {
+					if $line ~~ s/ ^ '%' // {
 						say "Trying to print to {$e.channel} : $line";
 						#$.irc.send: :where($_) :text($line) for .channels;
 						$.irc.send: :where($e.channel), :text($line);
@@ -639,7 +639,7 @@ class said2 does IRC::Client::Plugin {
 		$!event_file_supplier.emit( 0 );
 		my $timer_10 = now;
 		say "took this many seconds: {$timer_10 - $timer_1}";
-		Nil;
+		$.NEXT;
 	}
 }
 my %secs-per-unit = :years<15778800>, :months<1314900>, :days<43200>,
@@ -657,10 +657,10 @@ sub from-secs ( $secs-since-epoch is copy ) is export  {
 }
 sub string-to-secs ( Str $string ) is export {
 	my %secs-per-string = :years<15778800>, :year<15778800>, :months<1314900>,
-                          :month<1314900>, :weeks<302400>, :week<302400>, :days<43200>,
-                          :hours<3600>, :mins<60>, :minutes<60>, :minute<60>, :secs<1>,
-                          :seconds<1>, :second<1>,
-                          :ms<0.001>, :milliseconds<0.001>;
+	                      :month<1314900>, :weeks<302400>, :week<302400>, :days<43200>,
+	                      :hours<3600>, :mins<60>, :minutes<60>, :minute<60>, :secs<1>,
+	                      :seconds<1>, :second<1>,
+	                      :ms<0.001>, :milliseconds<0.001>;
 	say "string-to-secs got Str: [$string]";
 	if $string ~~ / (\d+) ' '? (\S+) / {
 		my $in-num = ~$0;

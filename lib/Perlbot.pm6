@@ -205,6 +205,7 @@ class said2 does IRC::Client::Plugin {
 						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
 						if $mode eq 'tell' {
 							for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
+								last if %values<to> ne $e.nick;
 								#%values.gist.say;
 								#%values<message>.say;
 								my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
@@ -549,7 +550,6 @@ class said2 does IRC::Client::Plugin {
 				}
 			}
 		}
-
 		=head2 Perl 6 Eval
 		=para Evaluates the requested Perl 6 code and returns the output of standard out
 		and error messages.

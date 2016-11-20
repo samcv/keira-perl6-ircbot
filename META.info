@@ -4,7 +4,7 @@
     "version"     : "v0.9.0",
     "authors"	  : ["github:samcv"],
     "description" : "My IRC Bot",
-    "depends"     : ["JSON::Fast",
+    "depends"     : ["JSON::Tiny",
                     "IRC::Client",
                     "Terminal::ANSIColor",
                     "WWW::Google::Time",

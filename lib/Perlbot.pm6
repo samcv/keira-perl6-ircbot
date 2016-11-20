@@ -2,7 +2,7 @@ use v6.c;
 use IRC::Client;
 use Text::Markov;
 use Terminal::ANSIColor;
-use JSON::Fast;
+use JSON::Tiny;
 use WWW::Google::Time;
 use IRCTextColor;
 use ConvertBases;
@@ -171,7 +171,7 @@ class said2 does IRC::Client::Plugin {
 				write-file( %history, $history-filename, $!last-saved-history, $msg.Int);
 				write-file( %chan-mode, $ban-filename, $!last-saved-ban, $msg.Int);
 				say "Done saving";
-				exit 0 if $msg >= 3;
+				$.irc.quit if $msg >= 3;
 			}
 		} );
 		signal(SIGINT).tap({ $!event_file_supplier.emit( 3 ) } );

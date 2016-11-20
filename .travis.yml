@@ -6,3 +6,4 @@ install:
     - rakudobrew build-panda
     - panda installdeps .
     - panda install IRC::Client
+    - cpan install WebService::UrbanDictionary

@@ -2,10 +2,10 @@ sudo: required
 language: perl6
 perl6:
     - latest
-
-install:
+before_install:
     - curl -L http://cpanmin.us | sudo perl - --self-upgrade
-    - cpanm install WebService::UrbanDictionary
+    - sudo cpanm install WebService::UrbanDictionary
+install:
     - rakudobrew build-panda
     - panda installdeps .
     - panda install IRC::Client

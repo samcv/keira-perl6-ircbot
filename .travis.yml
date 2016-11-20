@@ -9,3 +9,4 @@ install:
     - rakudobrew build-panda
     - panda installdeps .
     - panda install IRC::Client
+    - panda install Inline::Perl5

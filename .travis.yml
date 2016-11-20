@@ -1,10 +1,10 @@
+sudo: required
 language: perl6
 perl6:
     - latest
 
 install:
-    - curl -L http://cpanmin.us | perl - --self-upgrade
-    - ls ~/perl5
+    - curl -L http://cpanmin.us | sudo perl - --self-upgrade
     - cpanm install WebService::UrbanDictionary
     - rakudobrew build-panda
     - panda installdeps .

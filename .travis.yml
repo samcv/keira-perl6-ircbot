@@ -7,7 +7,7 @@ before_install:
     - sudo apt-get -y install perlbrew
     - travis_wait perlbrew install --thread --multi -j $(nproc) perl-5.20.0
     - perlbrew switch perl-5.20.0
-    - perlbrew install-cpanm
+    - perlbrew -f install-cpanm
     - cpanm install WebService::UrbanDictionary
 install:
     - rakudobrew build-panda

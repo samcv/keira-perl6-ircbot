@@ -3,10 +3,12 @@ language: perl6
 perl6:
     - latest
 before_install:
-    - sudo apt-get update
-    - sudo apt-get -y install libperl-dev
-    - curl -L http://cpanmin.us | sudo perl - --self-upgrade
-    - sudo cpanm install WebService::UrbanDictionary
+    - sudo apt-get -qq update
+    - sudo apt-get -y install perlbrew
+    - perlbrew install perl-5.20.0
+    - perlbrew switch perl-5.20.0
+    - perlbrew install-cpanm
+    - cpanm install WebService::UrbanDictionary
 install:
     - rakudobrew build-panda
     - panda installdeps .

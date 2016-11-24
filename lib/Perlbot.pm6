@@ -37,6 +37,7 @@ class said2 does IRC::Client::Plugin {
 	has Supply:U $.tick-supply;
 	has Supply:D $.tick-supply-interval = $!tick-supply.interval(1);
 	my $markov;
+	my $markov-lock = Lock.new;
 	sub set-mode ( $e, Str $argument, Str :$mode) {
 		$e.irc.send-cmd: 'MODE', $e.channel, $mode, $argument, :server($e.server);
 	}
@@ -71,8 +72,12 @@ class said2 does IRC::Client::Plugin {
 		}
 		0;
 	}
+	sub send-ping ( $e ) {
+		$e.irc.send-cmd: 'PING', $e.server.host, :server($e.server);
+	}
+
 	sub markov ( Int $length ) returns Str {
-			my $markov-text = $markov.read(75);
+			my $markov-text = $markov-lock.protect( { $markov.read(75) } );
 			$markov-text ~~ s:g/(\s+)('.'|'!'|':'|';'|',') /$1/;
 			$markov-text.Str;
 	}
@@ -82,7 +87,7 @@ class said2 does IRC::Client::Plugin {
 			$string ~~ s/$/ /;
 			$string ~~ s:g/(\S+) ('.'|'!'|':'|';'|',') ' '/ $0 $1 /;
 			#say "Processed string: [$string]";
-			$markov.feed( $string.words );
+			$markov-lock.protect( {	$markov.feed( $string.words ) } );
 		}
 	}
 	method irc-mode-channel ($e) {
@@ -142,6 +147,9 @@ class said2 does IRC::Client::Plugin {
 		%op = load-file(%op, $ops-filename, $e) if !%op;
 		%chan-mode = load-file(%chan-mode, $ban-filename, $e) if !%chan-mode;
 		$.tick-supply-interval.tap( {
+			if $_ %% 60 {
+				send-ping($e);
+			}
 			for	$e.server.channels -> $channel {
 				for %chan-mode{$e.server.host}{$channel}.keys -> $time {
 					if $time < now {
@@ -165,18 +173,22 @@ class said2 does IRC::Client::Plugin {
 				}
 			}
 		 } );
-		$.event_file_supply.tap( -> $msg {
+		$.event_file_supply.act( -> $msg {
 			start {
+				note "Starting to write to files";
 				write-file( %chan-event, $event-filename, $!last-saved-event, $msg.Int);
 				write-file( %history, $history-filename, $!last-saved-history, $msg.Int);
 				write-file( %chan-mode, $ban-filename, $!last-saved-ban, $msg.Int);
 				say "Done saving";
-				$.irc.quit if $msg >= 3;
+				if $msg >= 3 {
+					say "Trying to quit. Received SIGINT";
+					$.irc.quit;
+				}
 			}
 		} );
 		signal(SIGINT).tap({ $!event_file_supplier.emit( 3 ) } );
 		start {
-			$markov = Text::Markov.new;
+			$markov-lock.protect( { $markov = Text::Markov.new } );
 			for %history.keys -> $key {
 				markov-feed( %history{$key}{'text'} );
 			}
@@ -193,11 +205,9 @@ class said2 does IRC::Client::Plugin {
 		%chan-event{$e.nick}{'spoke'} = $now;
 		%chan-event{$e.nick}{'host'} = $e.host;
 		%chan-event{$e.nick}{'usermask'} = $e.usermask;
-		my $timer_2 = now;
 		my $running;
-		my $timer_3 = now;
 
-		my $timer_4 = now;
+		# FIXME maybe enclose in a start block?
 		for	$e.server.channels -> $channel {
 			for %chan-mode{$e.server.host}{$channel}.keys -> $time {
 				if $time < now {
@@ -217,11 +227,13 @@ class said2 does IRC::Client::Plugin {
 				}
 			}
 		}
-		say "proc print: {$timer_4 - $timer_3}";
-		say "Trying to write to $!said-filename : {$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}";
+		my $timer_2 = now;
+		note "1->2: {$timer_2 - $timer_1}";
 		if (^30).pick.not {
 			start { $.irc.send: :where($e.channel) :text( markov(75) ) }
 		}
+		my $timer_3 = now;
+		note "2->3: {$timer_3 - $timer_2}";
 		given $e.text {
 			=head2 Text Substitution
 			=para
@@ -503,103 +515,107 @@ class said2 does IRC::Client::Plugin {
 			when / ^ '!lc ' $<tolc>=(.*) / {
 				$.irc.send: :where($e.channel), :text($<tolc>.lc);
 			}
+			=head2 Mentioned
+			=para Gets the last time the specified person mentioned any users the bot knows about.
+			=para `Usage: !mentioned nickname`
+
+			when / ^ '!mentioned '(\S+) / {
+				my $temp_nick = $0;
+				if %chan-event{$temp_nick}{'mentioned'}:exists {
+					my $second = "$temp_nick mentioned, ";
+					for %chan-event{$temp_nick}{'mentioned'}.sort(*.value).reverse -> $pair {
+						$second ~= "{$pair.key}: {format-time($pair.value)} ";
+					}
+					$.irc.send: :where($e.nick), :text($second);
+				}
+			}
+			=head2 Time
+			=para Gets the current time in the specified location. Uses Google to do the lookups.
+			=para `Usage !time Location`
+
+			when / ^ '!time ' (.*) / {
+				my $time-query = ~$0;
+				start {
+					my %google-time;
+					try { %google-time = google-time-in($time-query) };
+					if !$! {
+						$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+					}
+					else {
+						$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
+					}
+				}
+			}
+			=head2 Perl 6 Eval
+			=para Evaluates the requested Perl 6 code and returns the output of standard out
+			and error messages.
+			=para `Usage: !p6 my $var = "Hello Perl 6 World!"; say $var`
+
+			=head2 Perl 5 Eval
+			=para Evaluates the requested Perl 5 code and returns the output of standard out
+			and error messages.
+			=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
+
+			when / ^ $<lang>=('!p '|'!p6 ') $<cmd>=(.+) / {
+				my $eval-proc;
+				if $<lang> eq '!p ' {
+					$eval-proc = Proc::Async.new: "perl", 'eval.pl', $<cmd>, :r, :w;
+				}
+				elsif $<lang> eq '!p6 ' {
+					$eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $<cmd>, :r, :w;
+				}
+				my ($stdout-result, $stderr-result);
+				my Tap $eval-proc-stdout = $eval-proc.stdout.tap: $stdout-result ~= *;
+				my Tap $eval-proc-stderr = $eval-proc.stderr.tap: $stderr-result ~= *;
+				my Promise $eval-proc-promise;
+				my $timeout-promise = Promise.in(4);
+				$timeout-promise.then( { $eval-proc.print(chr 3) if $eval-proc-promise.status !~~ Kept } );
+				start {
+					try {
+						$eval-proc-promise = $eval-proc.start;
+						await $eval-proc-promise or $timeout-promise;
+						$eval-proc.close-stdin;
+						$eval-proc.result;
+						CATCH { default { say $_.perl } };
+					};
+					put "OUT: `$stdout-result`\n\nERR: `$stderr-result`";
+					#await $eval-proc-promise or $timeout-promise;
+					return if $timeout-promise.status ~~ Kept;
+						ansi-to-irc($stderr-result);
+						my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
+						for %replace-hash.keys -> $key {
+							$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;
+							$stderr-result ~~ s:g/$key/%replace-hash{$key}/ if $stderr-result;
+						}
+						my $final-output;
+						$final-output ~= "STDOUT«$stdout-result»" if $stdout-result;
+						$final-output ~= "  " if $stdout-result and $stderr-result;
+						$final-output ~= "STDERR«$stderr-result»" if $stderr-result;
+						$.irc.send: :where($e.channel), :text($final-output);
+
+				}
+			}
 
 		}
-		# Do this after Text Substitutio
+		my $timer_4 = now;
+		note "3->4: {$timer_4 - $timer_3}";
+		# Do this after Text Substitution
 		%history{$now}{'text'} = $e.text;
 		%history{$now}{'nick'} = $e.nick;
 		# If any of the words we see are nicknames we've seen before, update the last time that
 		# person was mentioned
 		for $e.text.trans(';,:' => '').words { %chan-event{$e.nick}{'mentioned'}{$_} = $now if %chan-event{$_}:exists }
+		my $timer_5 = now;
+		note "4->5: {$timer_5 - $timer_4}";
 
-		if $e.text ~~ /^'!cmd '(.+)/ and $e.nick eq 'samcv' {
+		if $e.text ~~ / ^ '!cmd ' (.+) / and $e.nick eq 'samcv' {
 			my $cmd-out = qqx{$0};
 			say $cmd-out;
 			ansi-to-irc($cmd-out);
 			$cmd-out ~~ s:g/\n/ /;
 			$.irc.send: :where($e.channel), :text($cmd-out);
 		}
-		=head2 Mentioned
-		=para Gets the last time the specified person mentioned any users the bot knows about.
-		=para `Usage: !mentioned nickname`
-
-		elsif $e.text ~~ /^'!mentioned '(\S+)/ {
-			my $temp_nick = $0;
-			if %chan-event{$temp_nick}{'mentioned'}:exists {
-				my $second = "$temp_nick mentioned, ";
-				for %chan-event{$temp_nick}{'mentioned'}.sort(*.value).reverse -> $pair {
-					$second ~= "{$pair.key}: {format-time($pair.value)} ";
-				}
-				$.irc.send: :where($e.nick), :text($second);
-			}
-		}
-		=head2 Time
-		=para Gets the current time in the specified location. Uses Google to do the lookups.
-		=para `Usage !time Location`
-
-		elsif $e.text ~~ /^'!time '(.*)/ {
-			my $time-query = ~$0;
-			start {
-				my %google-time;
-				try { %google-time = google-time-in($time-query) };
-				if !$! {
-					$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
-				}
-				else {
-					$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
-				}
-			}
-		}
-		=head2 Perl 6 Eval
-		=para Evaluates the requested Perl 6 code and returns the output of standard out
-		and error messages.
-		=para `Usage: !p6 my $var = "Hello Perl 6 World!"; say $var`
-
-		=head2 Perl 5 Eval
-		=para Evaluates the requested Perl 5 code and returns the output of standard out
-		and error messages.
-		=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
-
-		elsif $e.text ~~ / ^ $<lang>=('!p '|'!p6 ') $<cmd>=(.+) / {
-			my $eval-proc;
-			if $<lang> eq '!p ' {
-				$eval-proc = Proc::Async.new: "perl", 'eval.pl', $<cmd>, :r, :w;
-			}
-			elsif $<lang> eq '!p6 ' {
-				$eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $<cmd>, :r, :w;
-			}
-			my ($stdout-result, $stderr-result);
-			my Tap $eval-proc-stdout = $eval-proc.stdout.tap: $stdout-result ~= *;
-			my Tap $eval-proc-stderr = $eval-proc.stderr.tap: $stderr-result ~= *;
-			my Promise $eval-proc-promise;
-			my $timeout-promise = Promise.in(4);
-			$timeout-promise.then( { $eval-proc.print(chr 3) if $eval-proc-promise.status !~~ Kept } );
-			start {
-				try {
-					$eval-proc-promise = $eval-proc.start;
-					await $eval-proc-promise or $timeout-promise;
-					$eval-proc.close-stdin;
-					$eval-proc.result;
-					CATCH { default { say $_.perl } };
-				};
-				put "OUT: `$stdout-result`\n\nERR: `$stderr-result`";
-				#await $eval-proc-promise or $timeout-promise;
-				return if $timeout-promise.status ~~ Kept;
-					ansi-to-irc($stderr-result);
-					my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
-					for %replace-hash.keys -> $key {
-						$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;
-						$stderr-result ~~ s:g/$key/%replace-hash{$key}/ if $stderr-result;
-					}
-					my $final-output;
-					$final-output ~= "STDOUT«$stdout-result»" if $stdout-result;
-					$final-output ~= "  " if $stdout-result and $stderr-result;
-					$final-output ~= "STDERR«$stderr-result»" if $stderr-result;
-					$.irc.send: :where($e.channel), :text($final-output);
-
-			}
-		}
-		elsif $e.text ~~ /'GMT' (['+'||'-'] \d+)? / {
+		elsif $e.text ~~ / 'GMT' (['+'||'-'] \d+)? / {
 			$.irc.send: :where($e.channel), :text("{$e.nick}: Please excuse my intrusion, but please refrain from using GMT as it is deprecated, use UTC{$0} instead.");
 		}
 		# Remove old keys if history is bigger than 30 and divisible by 8
@@ -609,7 +625,13 @@ class said2 does IRC::Client::Plugin {
 		#		%history{$pair.key}:delete;
 		#	}
 		#}
+		my $timer_6 = now;
+		note "5->6: {$timer_6 - $timer_5}";
+
 		start { markov-feed( $e.text ) }
+		my $timer_7 = now;
+		note "6->7: {$timer_7 - $timer_6}";
+
 		if $!proc ~~ Proc::Async {
 			if $!proc.started {
 				$running = True if $promise.status == Planned;
@@ -618,6 +640,9 @@ class said2 does IRC::Client::Plugin {
 				$running = False;
 			}
 		}
+		my $timer_8 = now;
+		note "7->8: {$timer_8 - $timer_7}";
+
 		if ! $running or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
 			$!said-modified-time = $!said-filename.IO.modified;
 			if $running {
@@ -643,11 +668,14 @@ class said2 does IRC::Client::Plugin {
 			 } );
 			 $promise = $!proc.start;
 		}
+		my $timer_9 = now;
 
 		$!proc.print("{$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}\n");
+		note "8->9: {$timer_9 - $timer_8}";
+
 		$!event_file_supplier.emit( 0 );
 		my $timer_10 = now;
-		say "took this many seconds: {$timer_10 - $timer_1}";
+		note "Total, 1->10: {$timer_10 - $timer_1}";
 		$.NEXT;
 	}
 }

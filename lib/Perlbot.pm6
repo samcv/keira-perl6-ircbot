@@ -2,10 +2,10 @@ use v6.c;
 use IRC::Client;
 use Text::Markov;
 use Terminal::ANSIColor;
-use JSON::Tiny;
 use WWW::Google::Time;
 use IRCTextColor;
 use ConvertBases;
+use classes;
 =head1 What
 =para
 A Perl 6+5 bot using the IRC::Client Perl 6 module
@@ -15,21 +15,23 @@ A Perl 6+5 bot using the IRC::Client Perl 6 module
 This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
 in Perl 6, and the rest is being ported over now.
 
+
 class said2 does IRC::Client::Plugin {
 	has Str $.said-filename = 'said.pl';
 	has Proc::Async $.proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
 	my $promise;
-	my %chan-event;    # %chan-event{$e.nick}{join/part/quit/host/usermask}
 	# Describes planned future events. Mode can be '-b' to unban after a specified amount of time.
 	# If mode is `msg` the descriptor will be their nickname, whose value is set to the message.
 	my %chan-mode;     # %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
 	my %curr-chanmode; # %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
-	my %history;       # %history{$now}{text/nick/sed}
-	my %op;            # %op{'nick'}{usermask/hostname}
+	my %ops;            # %ops{'nick'}{usermask/hostname}
 	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
 	has Instant $.last-saved-event = now;
 	has Instant $.last-saved-history = now;
 	has Instant $.last-saved-ban = now;
+	state history-class $history-file;
+	state chanevent-class $chanevent-file;
+
 	has IO::Handle $!channel-event-fh;
 	has Instant $!said-modified-time;
 	has Supplier $.event_file_supplier = Supplier.new;
@@ -65,8 +67,8 @@ class said2 does IRC::Client::Plugin {
 	}
 	# Receives an object and checks that the sender is an op
 	sub check-ops ( $e ) {
-		if %op{$e.nick} {
-			if $e.host eq %op{$e.nick}{'hostname'} and $e.usermask eq %op{$e.nick}{'usermask'} {
+		if %ops{$e.nick} {
+			if $e.host eq %ops{$e.nick}{'hostname'} and $e.usermask eq %ops{$e.nick}{'usermask'} {
 				return 1;
 			}
 		}
@@ -103,49 +105,48 @@ class said2 does IRC::Client::Plugin {
 			$nick ~~ s:g/ (\S*)? '*' (\S*)?/'$0'\\S*'$1'/;
 			$nick ~~ s/ '*' /\\S*/;
 			say "nick regex: $nick";
-			for %chan-event.keys -> $key {
+			for $chanevent-file.get-hash.keys -> $key {
 				if $key ~~ /<$nick>/ {
 				}
 			}
 		}
 	}
 	method irc-join ($e) {
-		%chan-event{$e.nick}{'join'} = now.Rat;
-		%chan-event{$e.nick}{'host'} = $e.host;
-		%chan-event{$e.nick}{'usermask'} = $e.usermask;
-
+		$chanevent-file.update-event($e);
 		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-part ($e) {
-		%chan-event{$e.nick}{'part'} = now.Rat;
-		%chan-event{$e.nick}{'part-msg'} = $e.args;
-
-		%chan-event{$e.nick}{'host'} = $e.host;
-		%chan-event{$e.nick}{'usermask'} = $e.usermask;
-
+		$chanevent-file.update-event($e);
 		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-quit ($e) {
-		%chan-event{$e.nick}{'quit'} = now.Rat;
-		%chan-event{$e.nick}{'quit-msg'} = $e.args;
-
-		%chan-event{$e.nick}{'host'} = $e.host;
-		%chan-event{$e.nick}{'usermask'} = $e.usermask;
+		$chanevent-file.update-event($e);
 		$!event_file_supplier.emit( 0 );
 		Nil;
 	}
 	method irc-connected ($e) {
-		my Str $event-filename = $e.server.current-nick ~ '-event.json';
-		my Str $history-filename = $e.server.current-nick ~ '-history.json';
-		my Str $ops-filename = $e.server.current-nick ~ '-ops.json';
-		my Str $ban-filename = $e.server.current-nick ~ '-ban.json';
-
-		%history = load-file(%history, $history-filename, $e) if !%history;
-		%chan-event = load-file(%chan-event, $event-filename, $e) if !%chan-event;
-		%op = load-file(%op, $ops-filename, $e) if !%op;
-		%chan-mode = load-file(%chan-mode, $ban-filename, $e) if !%chan-mode;
+		if ! $history-file {
+			$history-file = history-class.new( filename => $e.server.current-nick ~ '-history.json' );
+			$history-file.load;
+		}
+		if ! $chanevent-file {
+			$chanevent-file = chanevent-class.new( filename => $e.server.current-nick ~ '-event.json' );
+			$chanevent-file.load;
+		}
+		state $ops-file;
+		if ! $ops-file {
+			$ops-file = perlbot-file.new( filename => $e.server.current-nick ~ '-ops.json' );
+			$ops-file.load;
+			%ops = $ops-file.get-hash;
+		}
+		state $chanmode-file;
+		if ! $chanmode-file {
+			$chanmode-file = perlbot-file.new( filename => $e.server.current-nick ~ '-ban.json' );
+			$chanmode-file.load;
+			%chan-mode = $chanmode-file.get-hash;
+		}
 		$.tick-supply-interval.tap( {
 			if $_ %% 60 {
 				send-ping($e);
@@ -175,36 +176,42 @@ class said2 does IRC::Client::Plugin {
 		 } );
 		$.event_file_supply.act( -> $msg {
 			start {
-				note "Starting to write to files";
-				write-file( %chan-event, $event-filename, $!last-saved-event, $msg.Int);
-				write-file( %history, $history-filename, $!last-saved-history, $msg.Int);
-				write-file( %chan-mode, $ban-filename, $!last-saved-ban, $msg.Int);
-				say "Done saving";
+				note "Received message $msg for saving";
+				my @write-promises;
+
+				push @write-promises, $chanevent-file.save($msg.Int);
+
+				push @write-promises, $history-file.save($msg.Int);
+
+				$chanmode-file.set-hash(%chan-mode);
+				push @write-promises, $chanmode-file.save($msg.Int);
+				note "awaiting processes";
+				await Promise.allof(@write-promises);
+				note "Done saving";
 				if $msg >= 3 {
-					say "Trying to quit. Received SIGINT";
 					$.irc.quit;
 				}
 			}
 		} );
-		signal(SIGINT).tap({ $!event_file_supplier.emit( 3 ) } );
+		signal(SIGINT).tap( {
+			note "Trying to quit. Received SIGINT";
+			$!event_file_supplier.emit( 3 )
+		} );
 		start {
 			$markov-lock.protect( { $markov = Text::Markov.new } );
-			for %history.keys -> $key {
-				markov-feed( %history{$key}{'text'} );
+			for $history-file.get-hash.values -> $value {
+				markov-feed( $value{'text'} );
 			}
 		}
-		my $ops-file-watch-supply = $ops-filename.IO.watch; # TODO
 		Nil;
 	}
 	method irc-privmsg-channel ($e) {
 		my $unrec-time = "Unrecognized time format. Use X ms, sec(s), second(s), min(s), minutes(s), hour(s), week(s), month(s) or year(s)";
-
+		say $e.WHAT;
 		my $bot-nick = $e.server.current-nick;
 		my $now = now.Rat;
 		my $timer_1 = now;
-		%chan-event{$e.nick}{'spoke'} = $now;
-		%chan-event{$e.nick}{'host'} = $e.host;
-		%chan-event{$e.nick}{'usermask'} = $e.usermask;
+		$chanevent-file.update-event($e);
 		my $running;
 
 		# FIXME maybe enclose in a start block?
@@ -274,11 +281,13 @@ class said2 does IRC::Client::Plugin {
 				$case = ($options ~~ / i /).Bool if $options.defined;
 				say "Global is $global Case is $case";
 				$before = ':i ' ~ $before if $case;
-				for %history.sort.reverse -> $pair {
-					my $sed-text = %history{$pair.key}{'text'};
-					my $sed-nick = %history{$pair.key}{'nick'};
+				for $history-file.get-hash.sort.reverse.values -> $value {
+					say $value.gist;
+					my Str $sed-text = $value<text>;
+					my Str $sed-nick = $value<nick>;
+					say $sed-text;
 					my $was-sed = False;
-					$was-sed  = %history{$pair.key}{'sed'} if %history{$pair.key}{'sed'};
+					$was-sed = $value{'sed'} if $value{'sed'};
 					next if $sed-text ~~ m:i{ ^ 's/' };
 					next if $sed-text ~~ m{ ^ '!' };
 					if $sed-text ~~ m/<$before>/ {
@@ -286,9 +295,7 @@ class said2 does IRC::Client::Plugin {
 						$sed-text ~~ s/<$before>/$after/ if ! $global;
 						irc-style($sed-nick, :color<teal>);
 						my $now = now.Rat;
-						%history{$now}{'text'} = "<$sed-nick> $sed-text";
-						%history{$now}{'nick'} = $bot-nick;
-						%history{$now}{'sed'} = True;
+						$history-file.add-entry( $now, text => "<$sed-nick> $sed-text", nick => $bot-nick, sed => True );
 						if ! $was-sed {
 							$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
 						}
@@ -299,300 +306,304 @@ class said2 does IRC::Client::Plugin {
 					}
 				}
 			}
-			when / ^ '!derp' / {
-				start { $.irc.send: :where($e.channel) :text( markov(75) ) }
-			}
-			=head2 Seen
-			=para
-			Replys with the last time the specified user has spoke, joined, quit or parted.
-			`Usage: !seen nickname`
+		}
+		if $e.text.starts-with('!') {
+			given $e.text {
+				when / ^ '!derp' / {
+					start { $.irc.send: :where($e.channel) :text( markov(75) ) }
+				}
+				=head2 Seen
+				=para
+				Replys with the last time the specified user has spoke, joined, quit or parted.
+				`Usage: !seen nickname`
 
-			when / ^ '!seen ' $<nick>=(\S+) / {
-				my $seen-nick = ~$<nick>;
-				last if ! %chan-event{$seen-nick};
-				my $seen-time;
-				for %chan-event{$seen-nick}.sort.reverse -> $pair {
-					my $second;
-					if $pair.key eq 'mentioned' {
-						next;
-					}
-					elsif $pair.value ~~ /^ \d* '.'? \d* $/ {
-						$second = format-time($pair.value);
-					}
-					else {
-						$second = $pair.value;
-					}
-					$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
-				}
-				if %chan-event{$seen-nick}:exists {
-					irc-style($seen-nick, :color<blue>, :style<bold>);
-					$.irc.send: :where($e.channel), :text("$seen-nick $seen-time");
-				}
-			}
-			=head2 Saving Channel Event Data
-			=para The command `!SAVE` will cause the channel event data and history file to be saved.
-			Normally it will save when the data changes in memory provided it hasn't already saved
-			within the last 10 seconds
-
-			when /^'!SAVE'/ {
-				$!event_file_supplier.emit( 1 );
-			}
-			=head2 Tell
-			=para Syntax: `!tell nickname message` or `!tell nickname in 10 minutes message`
-			=para Will tell the specified nickname the message the next time they speak in channel
-
-			when / ^ '!tell ' $<nick>=(\S+) ' in ' $<time>=(\d+) ' ' $<units>=(\S+) ' '? $<message>=(.*) / {
-				say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
-				if %chan-event{$<nick>} {
-					my $message = ~$<message>;
-					my $got = string-to-secs("$<time> $<units>");
-					if !$got or $<nick> eq 'in' {
-						$.irc.send: :where($e.channel), :text("Syntax: !tell nick message or !tell nick in 10 units $unrec-time");
-						last;
-					}
-					# If we know about this person set it
-					my $now = now.Rat + $got;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
-					$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
-				}
-				else {
-					$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
-				}
-				# We should do it the next time they speak
-
-			}
-			when / ^ '!tell ' $<nick>=(\S+) ' '$<message>=(.*) / {
-				say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
-				if %chan-event{$<nick>} {
-					my $message = ~$<message>;
-					my $got = string-to-secs("$<time> $<units>");
-					# If we know about this person set it
-					my $now = now.Rat + $got;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-					%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
-					$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
-				}
-				else {
-					$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
-				}
-				if $<time> and $<units> {
-					# We have to do it in a specified number of mins
-					my $got = string-to-secs("$<time> $<units>");
-					say $got;
-					$.irc.send: :where($e.channel), :text("{$e.nick}: $got");
-
-				}
-				# We should do it the next time they speak
-
-			}
-			=head1 Operator Commands
-			=para
-			People who have been added as an operator in the 'botnick-ops.json' file will be allowed
-			to perform the following commands if their nick, hostname and usermask match those
-			in the file.
-
-			=head2 Ban
-			=para
-			The specified user will be banned by 30 minutes at default. You can override this and
-			set a specific number of seconds to ban for instead. The bot will automatically unban
-			the person once this time period is up, as well as printing to the channel how long the
-			user has been banned for. Usage: `!ban nick`.
-
-			when / ^ '!ban ' (\S+) ' '? (.+) / {
-				if ! check-ops($e) {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-					last;
-				}
-				say "e text: [{$e.text}]";
-				my $ban-who = ~$0;
-				my $ban-len = ~$1;
-				if $ban-len.defined {
-					$ban-len = string-to-secs($ban-len);
-					if ! $ban-len {
-						$.irc.send: :where($e.channel), :text($unrec-time);
-						last;
-					}
-				}
-				else {
-					$ban-len = string-to-secs("30 minutes") if ! $ban-len.defined;
-				}
-				ban($e, "$ban-who*!*@*", $ban-len);
-			}
-			=head2 Unban
-			=para `Usage: !unban nick`
-
-			when / ^ '!unban ' (\S+) ' '? (\S+)? / {
-				my $ban-who = $0;
-				my $ban-len = $1;
-				check-ops($e);
-				if check-ops($e) {
-					unban($e, "$ban-who*!*@*");
-				}
-				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-				}
-			}
-
-			=head2 Op
-			=para Gives ops to specified user, or if no user is specified, gives operator to the
-			user who did the command. `Usage: !op` or `!op nickname`.
-
-			when / ^ '!op' ' '? (\S+)? / {
-				if check-ops($e) {
-					my $op-who = $0.defined ?? $0 !! $e.nick;
-					give-ops($e, $op-who);
-				}
-				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-				}
-			}
-			=head2 DeOp
-			=para Takes ops away from the specified user, or if no user is specified, removes operator
-			status from the user who did the command. `Usage: !deop` or `!deop nickname`.
-
-			when / ^ '!deop' ' '? (\S+)? / {
-				if check-ops($e) {
-					my $op-who = $0.defined ?? $0 !! $e.nick;
-					take-ops($e, $op-who);
-				}
-				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-				}
-			}
-			=head2 Kick
-			=para Kicks the specified user from the channel. You are also allowed to specify a
-			custom kickmessage as well. `Usage: !kick nickname` or `!kick nickname custom message`.
-
-			when m{ ^ '!kick ' $<kick-who>=(\S+) ' '? $<message>=(.+)? } {
-				my $message = $<message> ?? $<message> !! "Better luck next time";
-				if check-ops($e) {
-					kick( $e, $<kick-who>, $message );
-				}
-				else {
-					$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
-					if $<kick-who> eq $e.nick {
-						kick( $e, $e.nick, $message )
-					}
-				}
-			}
-			=head2 Topic
-			=para Sets the topic. `Usage: !topic new topic message here`.
-
-			when / ^ '!topic ' $<topic>=(.*) / {
-				if check-ops($e) {
-					topic($e, $<topic>);
-				}
-			}
-			=head1 Hexidecimal/Decimal/Unicode conversions
-			=para You can convert between any of these three using the general syntax `!from2to`
-
-			=para When converting from numerical each value that is a different number is
-			delimited by spaces.  Examples are below.
-
-			=head2 Get Unicode Codepoints
-			=para Usage: `!hex2uni 🐧ABCD`
-			=para Output: `1F427 41 42 43 44`
-			=para Will get the Unicode codepoints in hex for a given string.
-
-			=head2 Convert from Unicode Codepoints to Characters
-			=para Usage: `!uni2hex 1F427 41 42 43 44`
-			=para Output: `🐧ABCD`
-
-			when / ^ '!' $<from>=(\S+) '2' $<to>=(\S+) ' ' $<string>=(.*) / {
-				$.irc.send: :where($e.channel), :text( convert-bases(:from(~$<from>), :to(~$<to>), ~$<string>) );
-			}
-			when / ^ '!rev ' $<torev>=(.*) / {
-				$.irc.send: :where($e.channel), :text($<torev>.flip);
-			}
-			when / ^ '!uc ' $<touc>=(.*) / {
-				$.irc.send: :where($e.channel), :text($<touc>.uc);
-			}
-			when / ^ '!lc ' $<tolc>=(.*) / {
-				$.irc.send: :where($e.channel), :text($<tolc>.lc);
-			}
-			=head2 Mentioned
-			=para Gets the last time the specified person mentioned any users the bot knows about.
-			=para `Usage: !mentioned nickname`
-
-			when / ^ '!mentioned '(\S+) / {
-				my $temp_nick = $0;
-				if %chan-event{$temp_nick}{'mentioned'}:exists {
-					my $second = "$temp_nick mentioned, ";
-					for %chan-event{$temp_nick}{'mentioned'}.sort(*.value).reverse -> $pair {
-						$second ~= "{$pair.key}: {format-time($pair.value)} ";
-					}
-					$.irc.send: :where($e.nick), :text($second);
-				}
-			}
-			=head2 Time
-			=para Gets the current time in the specified location. Uses Google to do the lookups.
-			=para `Usage !time Location`
-
-			when / ^ '!time ' (.*) / {
-				my $time-query = ~$0;
-				start {
-					my %google-time;
-					try { %google-time = google-time-in($time-query) };
-					if !$! {
-						$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
-					}
-					else {
-						$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
-					}
-				}
-			}
-			=head2 Perl 6 Eval
-			=para Evaluates the requested Perl 6 code and returns the output of standard out
-			and error messages.
-			=para `Usage: !p6 my $var = "Hello Perl 6 World!"; say $var`
-
-			=head2 Perl 5 Eval
-			=para Evaluates the requested Perl 5 code and returns the output of standard out
-			and error messages.
-			=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
-
-			when / ^ $<lang>=('!p '|'!p6 ') $<cmd>=(.+) / {
-				my $eval-proc;
-				if $<lang> eq '!p ' {
-					$eval-proc = Proc::Async.new: "perl", 'eval.pl', $<cmd>, :r, :w;
-				}
-				elsif $<lang> eq '!p6 ' {
-					$eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $<cmd>, :r, :w;
-				}
-				my ($stdout-result, $stderr-result);
-				my Tap $eval-proc-stdout = $eval-proc.stdout.tap: $stdout-result ~= *;
-				my Tap $eval-proc-stderr = $eval-proc.stderr.tap: $stderr-result ~= *;
-				my Promise $eval-proc-promise;
-				my $timeout-promise = Promise.in(4);
-				$timeout-promise.then( { $eval-proc.print(chr 3) if $eval-proc-promise.status !~~ Kept } );
-				start {
-					try {
-						$eval-proc-promise = $eval-proc.start;
-						await $eval-proc-promise or $timeout-promise;
-						$eval-proc.close-stdin;
-						$eval-proc.result;
-						CATCH { default { say $_.perl } };
-					};
-					put "OUT: `$stdout-result`\n\nERR: `$stderr-result`";
-					#await $eval-proc-promise or $timeout-promise;
-					return if $timeout-promise.status ~~ Kept;
-						ansi-to-irc($stderr-result);
-						my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
-						for %replace-hash.keys -> $key {
-							$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;
-							$stderr-result ~~ s:g/$key/%replace-hash{$key}/ if $stderr-result;
+				when / ^ '!seen ' $<nick>=(\S+) / {
+					my $seen-nick = ~$<nick>;
+					last if ! $chanevent-file.nick-exists($seen-nick);
+					my $seen-time;
+					for $chanevent-file.get-nick-event($seen-nick).sort.reverse -> $pair {
+						my $second;
+						if $pair.key eq 'mentioned' {
+							next;
 						}
-						my $final-output;
-						$final-output ~= "STDOUT«$stdout-result»" if $stdout-result;
-						$final-output ~= "  " if $stdout-result and $stderr-result;
-						$final-output ~= "STDERR«$stderr-result»" if $stderr-result;
-						$.irc.send: :where($e.channel), :text($final-output);
+						elsif $pair.value ~~ /^ \d* '.'? \d* $/ {
+							$second = format-time($pair.value);
+						}
+						else {
+							$second = $pair.value;
+						}
+						$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
+					}
+					if $chanevent-file.nick-exists($seen-nick) {
+						irc-style($seen-nick, :color<blue>, :style<bold>);
+						$.irc.send: :where($e.channel), :text("$seen-nick $seen-time");
+					}
+				}
+				=head2 Saving Channel Event Data
+				=para The command `!SAVE` will cause the channel event data and history file to be saved.
+				Normally it will save when the data changes in memory provided it hasn't already saved
+				within the last 10 seconds
 
+				when /^'!SAVE'/ {
+					$!event_file_supplier.emit( 1 );
+				}
+				=head2 Tell
+				=para Syntax: `!tell nickname message` or `!tell nickname in 10 minutes message`
+				=para Will tell the specified nickname the message the next time they speak in channel
+
+				when / ^ '!tell ' $<nick>=(\S+) ' in ' $<time>=(\d+) ' ' $<units>=(\S+) ' '? $<message>=(.*) / {
+					say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
+					if $chanevent-file.nick-exists($<nick>) {
+						my $message = ~$<message>;
+						my $got = string-to-secs("$<time> $<units>");
+						if !$got or $<nick> eq 'in' {
+							$.irc.send: :where($e.channel), :text("Syntax: !tell nick message or !tell nick in 10 units $unrec-time");
+							last;
+						}
+						# If we know about this person set it
+						my $now = now.Rat + $got;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
+					}
+					else {
+						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
+					}
+					# We should do it the next time they speak
+
+				}
+				when / ^ '!tell ' $<nick>=(\S+) ' '$<message>=(.*) / {
+					say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
+					if $chanevent-file.nick-exists(~$<nick>) {
+						my $message = ~$<message>;
+						my $got = string-to-secs("$<time> $<units>");
+						# If we know about this person set it
+						my $now = now.Rat + $got;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
+					}
+					else {
+						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
+					}
+					if $<time> and $<units> {
+						# We have to do it in a specified number of mins
+						my $got = string-to-secs("$<time> $<units>");
+						say $got;
+						$.irc.send: :where($e.channel), :text("{$e.nick}: $got");
+
+					}
+					# We should do it the next time they speak
+
+				}
+				=head1 Operator Commands
+				=para
+				People who have been added as an operator in the 'botnick-ops.json' file will be allowed
+				to perform the following commands if their nick, hostname and usermask match those
+				in the file.
+
+				=head2 Ban
+				=para
+				The specified user will be banned by 30 minutes at default. You can override this and
+				set a specific number of seconds to ban for instead. The bot will automatically unban
+				the person once this time period is up, as well as printing to the channel how long the
+				user has been banned for. Usage: `!ban nick`.
+
+				when / ^ '!ban ' (\S+) ' '? (.+) / {
+					if ! check-ops($e) {
+						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+						last;
+					}
+					say "e text: [{$e.text}]";
+					my $ban-who = ~$0;
+					my $ban-len = ~$1;
+					if $ban-len.defined {
+						$ban-len = string-to-secs($ban-len);
+						if ! $ban-len {
+							$.irc.send: :where($e.channel), :text($unrec-time);
+							last;
+						}
+					}
+					else {
+						$ban-len = string-to-secs("30 minutes") if ! $ban-len.defined;
+					}
+					ban($e, "$ban-who*!*@*", $ban-len);
+				}
+				=head2 Unban
+				=para `Usage: !unban nick`
+
+				when / ^ '!unban ' (\S+) ' '? (\S+)? / {
+					my $ban-who = $0;
+					my $ban-len = $1;
+					check-ops($e);
+					if check-ops($e) {
+						unban($e, "$ban-who*!*@*");
+					}
+					else {
+						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+					}
+				}
+
+				=head2 Op
+				=para Gives ops to specified user, or if no user is specified, gives operator to the
+				user who did the command. `Usage: !op` or `!op nickname`.
+
+				when / ^ '!op' ' '? (\S+)? / {
+					if check-ops($e) {
+						my $op-who = $0.defined ?? $0 !! $e.nick;
+						give-ops($e, $op-who);
+					}
+					else {
+						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+					}
+				}
+				=head2 DeOp
+				=para Takes ops away from the specified user, or if no user is specified, removes operator
+				status from the user who did the command. `Usage: !deop` or `!deop nickname`.
+
+				when / ^ '!deop' ' '? (\S+)? / {
+					if check-ops($e) {
+						my $op-who = $0.defined ?? $0 !! $e.nick;
+						take-ops($e, $op-who);
+					}
+					else {
+						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+					}
+				}
+				=head2 Kick
+				=para Kicks the specified user from the channel. You are also allowed to specify a
+				custom kickmessage as well. `Usage: !kick nickname` or `!kick nickname custom message`.
+
+				when m{ ^ '!kick ' $<kick-who>=(\S+) ' '? $<message>=(.+)? } {
+					my $message = $<message> ?? $<message> !! "Better luck next time";
+					if check-ops($e) {
+						kick( $e, $<kick-who>, $message );
+					}
+					else {
+						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
+						if $<kick-who> eq $e.nick {
+							kick( $e, $e.nick, $message )
+						}
+					}
+				}
+				=head2 Topic
+				=para Sets the topic. `Usage: !topic new topic message here`.
+
+				when / ^ '!topic ' $<topic>=(.*) / {
+					if check-ops($e) {
+						topic($e, $<topic>);
+					}
+				}
+				=head1 Hexidecimal/Decimal/Unicode conversions
+				=para You can convert between any of these three using the general syntax `!from2to`
+
+				=para When converting from numerical each value that is a different number is
+				delimited by spaces.  Examples are below.
+
+				=head2 Get Unicode Codepoints
+				=para Usage: `!hex2uni 🐧ABCD`
+				=para Output: `1F427 41 42 43 44`
+				=para Will get the Unicode codepoints in hex for a given string.
+
+				=head2 Convert from Unicode Codepoints to Characters
+				=para Usage: `!uni2hex 1F427 41 42 43 44`
+				=para Output: `🐧ABCD`
+
+				when / ^ '!' $<from>=(\S+) '2' $<to>=(\S+) ' ' $<string>=(.*) / {
+					$.irc.send: :where($e.channel), :text( convert-bases(:from(~$<from>), :to(~$<to>), ~$<string>) );
+				}
+				when / ^ '!rev ' $<torev>=(.*) / {
+					$.irc.send: :where($e.channel), :text($<torev>.flip);
+				}
+				when / ^ '!uc ' $<touc>=(.*) / {
+					$.irc.send: :where($e.channel), :text($<touc>.uc);
+				}
+				when / ^ '!lc ' $<tolc>=(.*) / {
+					$.irc.send: :where($e.channel), :text($<tolc>.lc);
+				}
+				=head2 Mentioned
+				=para Gets the last time the specified person mentioned any users the bot knows about.
+				=para `Usage: !mentioned nickname`
+
+				when / ^ '!mentioned '(\S+) / {
+					my $temp_nick = $0;
+					if $chanevent-file.get-nick-event($temp_nick){'mentioned'}:exists {
+						my $second = "$temp_nick mentioned, ";
+						for $chanevent-file.get-nick-event($temp_nick){'mentioned'}.sort(*.value).reverse -> $pair {
+							$second ~= "{$pair.key}: {format-time($pair.value)} ";
+						}
+						$.irc.send: :where($e.nick), :text($second);
+					}
+				}
+				=head2 Time
+				=para Gets the current time in the specified location. Uses Google to do the lookups.
+				=para `Usage !time Location`
+
+				when / ^ '!time ' (.*) / {
+					my $time-query = ~$0;
+					start {
+						my %google-time;
+						try { %google-time = google-time-in($time-query) };
+						if !$! {
+							$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+						}
+						else {
+							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
+						}
+					}
+				}
+				=head2 Perl 6 Eval
+				=para Evaluates the requested Perl 6 code and returns the output of standard out
+				and error messages.
+				=para `Usage: !p6 my $var = "Hello Perl 6 World!"; say $var`
+
+				=head2 Perl 5 Eval
+				=para Evaluates the requested Perl 5 code and returns the output of standard out
+				and error messages.
+				=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
+
+				when / ^ $<lang>=('!p '|'!p6 ') $<cmd>=(.+) / {
+					my $eval-proc;
+					if $<lang> eq '!p ' {
+						$eval-proc = Proc::Async.new: "perl", 'eval.pl', $<cmd>, :r, :w;
+					}
+					elsif $<lang> eq '!p6 ' {
+						$eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $<cmd>, :r, :w;
+					}
+					my ($stdout-result, $stderr-result);
+					my Tap $eval-proc-stdout = $eval-proc.stdout.tap: $stdout-result ~= *;
+					my Tap $eval-proc-stderr = $eval-proc.stderr.tap: $stderr-result ~= *;
+					my Promise $eval-proc-promise;
+					my $timeout-promise = Promise.in(4);
+					$timeout-promise.then( { $eval-proc.print(chr 3) if $eval-proc-promise.status !~~ Kept } );
+					start {
+						try {
+							$eval-proc-promise = $eval-proc.start;
+							await $eval-proc-promise or $timeout-promise;
+							$eval-proc.close-stdin;
+							$eval-proc.result;
+							CATCH { default { say $_.perl } };
+						};
+						put "OUT: `$stdout-result`\n\nERR: `$stderr-result`";
+						#await $eval-proc-promise or $timeout-promise;
+						return if $timeout-promise.status ~~ Kept;
+							ansi-to-irc($stderr-result);
+							my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
+							for %replace-hash.keys -> $key {
+								$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;
+								$stderr-result ~~ s:g/$key/%replace-hash{$key}/ if $stderr-result;
+							}
+							my $final-output;
+							$final-output ~= "STDOUT«$stdout-result»" if $stdout-result;
+							$final-output ~= "  " if $stdout-result and $stderr-result;
+							$final-output ~= "STDERR«$stderr-result»" if $stderr-result;
+							$.irc.send: :where($e.channel), :text($final-output);
+
+					}
 				}
 			}
 
@@ -600,11 +611,11 @@ class said2 does IRC::Client::Plugin {
 		my $timer_4 = now;
 		note "3->4: {$timer_4 - $timer_3}";
 		# Do this after Text Substitution
-		%history{$now}{'text'} = $e.text;
-		%history{$now}{'nick'} = $e.nick;
+		$history-file.add-history($e);
+
 		# If any of the words we see are nicknames we've seen before, update the last time that
 		# person was mentioned
-		for $e.text.trans(';,:' => '').words { %chan-event{$e.nick}{'mentioned'}{$_} = $now if %chan-event{$_}:exists }
+		for $e.text.trans(';,:' => '').words { $chanevent-file.update-mentioned($e.nick) if $chanevent-file.nick-exists($_) }
 		my $timer_5 = now;
 		note "4->5: {$timer_5 - $timer_4}";
 
@@ -618,13 +629,6 @@ class said2 does IRC::Client::Plugin {
 		elsif $e.text ~~ / 'GMT' (['+'||'-'] \d+)? / {
 			$.irc.send: :where($e.channel), :text("{$e.nick}: Please excuse my intrusion, but please refrain from using GMT as it is deprecated, use UTC{$0} instead.");
 		}
-		# Remove old keys if history is bigger than 30 and divisible by 8
-		#if %history.elems > 30 and %history.elems %% 8 {
-		#	for %history.sort -> $pair {
-		#		last if %history.elems <= 30;
-		#		%history{$pair.key}:delete;
-		#	}
-		#}
 		my $timer_6 = now;
 		note "5->6: {$timer_6 - $timer_5}";
 
@@ -734,41 +738,6 @@ sub format-time ( $time-since-epoch ) {
 	}
 	$tell_return ~= "$sign]";
 	return irc-text($tell_return, :color<teal> );
-}
-sub to-sec ( $string ) {
-}
-
-multi write-file ( %data, $file-bak, $file ) {
-	my $var = 0.Int;
-	my $force = 1.Int;
-	write-file(%data, $file, $var, $force);
-}
-multi write-file ( %data, $file, $last-saved is rw, Int $force ) {
-	my $file-bak = $file ~ '.bak';
-	if now - $last-saved > 10 or !$last-saved.defined or $force {
-		my $file-bak-io = IO::Path.new($file-bak);
-		try {
-			#say colored("Trying to update $file data", 'blue');
-			spurt $file-bak, to-json( %data );
-			# from-json will throw an exception if it can't process the file
-			# we just wrote
-			from-json(slurp $file-bak);
-			CATCH { .note }
-		}
-		$file-bak-io.copy($file) unless $!.defined;
-		$last-saved = now;
-	}
-}
-sub load-file ( \hash, Str $filename, $e ) is rw {
-	my $hash := hash;
-	if $filename.IO.e {
-		say "Trying to load $filename";
-		$hash := from-json( slurp $filename );
-	}
-	else {
-		say "Cannot find $filename";
-	}
-	$hash;
 }
 
 # vim: noet

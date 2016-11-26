@@ -16,6 +16,7 @@ A Perl 6+5 bot using the IRC::Client Perl 6 module
 This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
 in Perl 6, and the rest is being ported over now.
 
+my $debug = False;
 
 class said2 does IRC::Client::Plugin {
 	has Str $.said-filename = 'said.pl';
@@ -24,7 +25,6 @@ class said2 does IRC::Client::Plugin {
 	# Describes planned future events. Mode can be '-b' to unban after a specified amount of time.
 	# If mode is `msg` the descriptor will be their nickname, whose value is set to the message.
 	my %chan-mode;     # %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
-	my %curr-chanmode; # %curr-chanmode{$e.server.host}{$channel}{time}{mode}{descriptor}
 	my %ops;            # %ops{'nick'}{usermask/hostname}
 	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
 	has Instant $.last-saved-event = now;
@@ -32,6 +32,8 @@ class said2 does IRC::Client::Plugin {
 	has Instant $.last-saved-ban = now;
 	state history-class $history-file;
 	state chanevent-class $chanevent-file;
+	state chanmode-class $chanmode-file;
+	state perlbot-file $ops-file;
 
 	has IO::Handle $!channel-event-fh;
 	has Instant $!said-modified-time;
@@ -48,6 +50,7 @@ class said2 does IRC::Client::Plugin {
 	sub ban ( $e, $mask, $secs) {
 		my $ban-for = now.Rat + $secs;
 		%chan-mode{$e.server.host}{$e.channel}{$ban-for}{'-b'} = $mask;
+		$chanmode-file.set-hash(%chan-mode);
 		set-mode($e, :mode<+b>, $mask);
 		$e.irc.send: :where($e.channel) :text("Banned for {format-time($ban-for)}");
 	}
@@ -78,18 +81,15 @@ class said2 does IRC::Client::Plugin {
 	sub send-ping ( $e ) {
 		$e.irc.send-cmd: 'PING', $e.server.host, :server($e.server);
 	}
-
 	sub markov ( Int $length ) returns Str {
 			my $markov-text = $markov-lock.protect( { $markov.read(75) } );
 			$markov-text ~~ s:g/(\s+)('.'|'!'|':'|';'|',') /$1/;
 			$markov-text.Str;
 	}
 	multi markov-feed ( Str $string is copy ) {
-		#say "Got string: [$string]";
 		if $string !~~ / ^ '!'|'s/' / {
 			$string ~~ s/$/ /;
 			$string ~~ s:g/(\S+) ('.'|'!'|':'|';'|',') ' '/ $0 $1 /;
-			#say "Processed string: [$string]";
 			$markov-lock.protect( {	$markov.feed( $string.words ) } );
 		}
 	}
@@ -98,19 +98,7 @@ class said2 does IRC::Client::Plugin {
 		my $server = $e.server;
 		my $mode-type = @mode-pairs.shift;
 		$mode-type = $mode-type.key ~ $mode-type.value;
-		my $mode = @mode-pairs.join;
-		if $mode-type ~~ /'b'/ {
-			my $user = $mode;
-			$mode ~~ m/ ^ $<nick>=( \S+ ) '!' /;
-			my $nick = $<nick>;
-			$nick ~~ s:g/ (\S*)? '*' (\S*)?/'$0'\\S*'$1'/;
-			$nick ~~ s/ '*' /\\S*/;
-			say "nick regex: $nick";
-			for $chanevent-file.get-hash.keys -> $key {
-				if $key ~~ /<$nick>/ {
-				}
-			}
-		}
+		my $mode-descriptor = @mode-pairs.join;
 	}
 	method irc-join ($e) {
 		$chanevent-file.update-event($e);
@@ -136,15 +124,13 @@ class said2 does IRC::Client::Plugin {
 			$chanevent-file = chanevent-class.new( filename => $e.server.current-nick ~ '-event.json' );
 			$chanevent-file.load;
 		}
-		state $ops-file;
 		if ! $ops-file {
 			$ops-file = perlbot-file.new( filename => $e.server.current-nick ~ '-ops.json' );
 			$ops-file.load;
 			%ops = $ops-file.get-hash;
 		}
-		state $chanmode-file;
 		if ! $chanmode-file {
-			$chanmode-file = perlbot-file.new( filename => $e.server.current-nick ~ '-ban.json' );
+			$chanmode-file = chanmode-class.new( filename => $e.server.current-nick ~ '-ban.json' );
 			$chanmode-file.load;
 			%chan-mode = $chanmode-file.get-hash;
 		}
@@ -156,7 +142,7 @@ class said2 does IRC::Client::Plugin {
 				for %chan-mode{$e.server.host}{$channel}.keys -> $time {
 					if $time < now {
 						for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-							say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+							#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
 							if $mode ~~ / ^ '-'|'+' / {
 								$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
 								%chan-mode{$e.server.host}{$channel}{$time}:delete;
@@ -169,6 +155,7 @@ class said2 does IRC::Client::Plugin {
 									$.irc.send: :where($channel) :text( $formated );
 								}
 								%chan-mode{$e.server.host}{$channel}{$time}:delete;
+								$chanmode-file.set-hash(%chan-mode);
 							}
 						}
 					}
@@ -179,9 +166,7 @@ class said2 does IRC::Client::Plugin {
 			start {
 				note "Received message $msg for saving";
 				my @write-promises;
-
 				push @write-promises, $chanevent-file.save($msg.Int);
-
 				push @write-promises, $history-file.save($msg.Int);
 
 				$chanmode-file.set-hash(%chan-mode);
@@ -208,13 +193,19 @@ class said2 does IRC::Client::Plugin {
 	}
 	method irc-privmsg-channel ($e) {
 		my $unrec-time = "Unrecognized time format. Use X ms, sec(s), second(s), min(s), minutes(s), hour(s), week(s), month(s) or year(s)";
-		say $e.WHAT;
 		my $bot-nick = $e.server.current-nick;
 		my $now = now.Rat;
 		my $timer_1 = now;
 		$chanevent-file.update-event($e);
 		my $running;
+		my $tell = $chanmode-file.tell-nick($e);
+		if $tell {
+			say $tell;
+			$.irc.send: :where($tell<where>) :text($tell<text> );
+		}
 
+		%chan-mode = $chanmode-file.get-hash;
+#`[[
 		# FIXME maybe enclose in a start block?
 		for	$e.server.channels -> $channel {
 			for %chan-mode{$e.server.host}{$channel}.keys -> $time {
@@ -235,13 +226,14 @@ class said2 does IRC::Client::Plugin {
 				}
 			}
 		}
+]]
 		my $timer_2 = now;
-		note "1->2: {$timer_2 - $timer_1}";
+		note "1->2: {$timer_2 - $timer_1}" if $debug;
 		if (^30).pick.not {
 			start { $.irc.send: :where($e.channel) :text( markov(75) ) }
 		}
 		my $timer_3 = now;
-		note "2->3: {$timer_3 - $timer_2}";
+		note "2->3: {$timer_3 - $timer_2}" if $debug;
 		given $e.text {
 			=head2 Text Substitution
 			=para
@@ -354,7 +346,7 @@ class said2 does IRC::Client::Plugin {
 
 				when / ^ '!tell ' $<nick>=(\S+) ' in ' $<time>=(\d+) ' ' $<units>=(\S+) ' '? $<message>=(.*) / {
 					say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
-					if $chanevent-file.nick-exists($<nick>) {
+					if $chanevent-file.nick-exists(~$<nick>) {
 						my $message = ~$<message>;
 						my $got = string-to-secs("$<time> $<units>");
 						if !$got or $<nick> eq 'in' {
@@ -367,6 +359,7 @@ class said2 does IRC::Client::Plugin {
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+						$chanmode-file.set-hash(%chan-mode);
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {
@@ -376,16 +369,19 @@ class said2 does IRC::Client::Plugin {
 
 				}
 				when / ^ '!tell ' $<nick>=(\S+) ' '$<message>=(.*) / {
-					say "Nick [{$<nick>}] Units [{$<units>}] Time [{$<time>}] Message [{$<message>}]";
+					say "Nick [{$<nick>}] Message [{$<message>}]";
 					if $chanevent-file.nick-exists(~$<nick>) {
 						my $message = ~$<message>;
-						my $got = string-to-secs("$<time> $<units>");
+						#my $got = string-to-secs("$<time> $<units>");
 						# If we know about this person set it
-						my $now = now.Rat + $got;
+						my $now = now.Rat;
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
 						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
+						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = $now;
+						$chanmode-file.set-hash(%chan-mode);
+						say %chan-mode;
+						say $chanmode-file.get-hash;
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {
@@ -610,7 +606,7 @@ class said2 does IRC::Client::Plugin {
 
 		}
 		my $timer_4 = now;
-		note "3->4: {$timer_4 - $timer_3}";
+		note "3->4: {$timer_4 - $timer_3}" if $debug;
 		# Do this after Text Substitution
 		$history-file.add-history($e);
 
@@ -618,7 +614,7 @@ class said2 does IRC::Client::Plugin {
 		# person was mentioned
 		for $e.text.trans(';,:' => '').words { $chanevent-file.update-mentioned($e.nick) if $chanevent-file.nick-exists($_) }
 		my $timer_5 = now;
-		note "4->5: {$timer_5 - $timer_4}";
+		note "4->5: {$timer_5 - $timer_4}" if $debug;
 
 		if $e.text ~~ / ^ '!cmd ' (.+) / and $e.nick eq 'samcv' {
 			my $cmd-out = qqx{$0};
@@ -631,11 +627,11 @@ class said2 does IRC::Client::Plugin {
 			$.irc.send: :where($e.channel), :text("{$e.nick}: Please excuse my intrusion, but please refrain from using GMT as it is deprecated, use UTC{$0} instead.");
 		}
 		my $timer_6 = now;
-		note "5->6: {$timer_6 - $timer_5}";
+		note "5->6: {$timer_6 - $timer_5}" if $debug;
 
 		start { markov-feed( $e.text ) }
 		my $timer_7 = now;
-		note "6->7: {$timer_7 - $timer_6}";
+		note "6->7: {$timer_7 - $timer_6}" if $debug;
 
 		if $!proc ~~ Proc::Async {
 			if $!proc.started {
@@ -646,7 +642,7 @@ class said2 does IRC::Client::Plugin {
 			}
 		}
 		my $timer_8 = now;
-		note "7->8: {$timer_8 - $timer_7}";
+		note "7->8: {$timer_8 - $timer_7}" if $debug;
 
 		if ! $running or $!said-filename.IO.modified > $!said-modified-time or $e.text ~~ /^'!RESET'$/ {
 			$!said-modified-time = $!said-filename.IO.modified;
@@ -676,7 +672,7 @@ class said2 does IRC::Client::Plugin {
 		my $timer_9 = now;
 
 		$!proc.print("{$e.channel} >$bot-nick\< \<{$e.nick}> {$e.text}\n");
-		note "8->9: {$timer_9 - $timer_8}";
+		note "8->9: {$timer_9 - $timer_8}" if $debug;
 
 		$!event_file_supplier.emit( 0 );
 		my $timer_10 = now;

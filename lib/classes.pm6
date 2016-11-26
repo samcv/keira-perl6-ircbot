@@ -8,11 +8,7 @@ my role perlbot-file is export {
 	has %!hash;
 	has $!last-saved = 0;
 	method save ( $force? ) {
-		note "Entered save method for $.filename";
-		say "last saved is $!last-saved";
-		say "first" if now - $!last-saved > 100;
-		say "second" if $!last-saved.defined.not;
-		say "third" if $force;
+		#note "Entered save method for $.filename";
 		if now - $!last-saved > 100 or $force {
 			my Promise $promise = start {
 				note "Starting to write $.filename";
@@ -25,8 +21,8 @@ my role perlbot-file is export {
 					# we just wrote
 					from-json(slurp $!filename-bak);
 					my $write-t3 = now;
-					note "Took {$write-t2 - $write-t1} to save file. Done writing $!filename";
-					note "Took {$write-t3 - $write-t2} to load file. Done";
+					#note "Took {$write-t2 - $write-t1} to save file. Done writing $!filename";
+					#note "Took {$write-t3 - $write-t2} to load file. Done";
 					CATCH { .note }
 				}
 				$!file-bak-io.copy($.filename) unless $!.defined;
@@ -54,8 +50,8 @@ my role perlbot-file is export {
 	method get-hash {
 		%!hash;
 	}
-	method set-hash ( %!hash ) {
-		%!hash = %!hash;
+	method set-hash ( %hash ) {
+		%!hash = %hash;
 	}
 }
 # %ops{'nick'}{usermask/hostname}
@@ -67,51 +63,30 @@ my class ops-class does perlbot-file is export {
 		False;
 	}
 }
-# %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
+# %!hash{$e.server.host}{channel}{time}{mode}{descriptor}
 my class chanmode-class does perlbot-file is export {
-	method schedule-unban ($e, $ban-for, $mask) {
-		%!hash{$e.server.host}{$e.channel}{$ban-for}{'-b'} = $mask;
-	}
-	method check-event-scheduled ( $e ) {
-		for	$e.server.channels -> $channel {
-			for %!hash{$e.server.host}{$channel}.keys -> $time {
-				if $time < now {
-					return True;
-				}
-			}
-		}
-		False;
-	}
-	method has-something-to-say ( $e ) {
+	method tell-nick ( IRC::Client::Message $e ) {
+		say "Calling tell-nick";
 		say %!hash;
 		for	$e.server.channels -> $channel {
+			say $channel;
 			for %!hash{$e.server.host}{$channel}.keys -> $time {
 				if $time < now {
-					for %!hash{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
-						if $mode eq 'tell' {
-							return True;
-						}
-					}
-				}
-			}
-		}
-	}
-	method tell-nick ( $e ) {
-		for	$e.server.channels -> $channel {
-			for %!hash{$e.server.host}{$channel}.keys -> $time {
-				if $time < now {
+					say $time;
 					for  %!hash{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+
+						say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
 						if $mode eq 'tell' {
 							for %!hash{$e.server.host}{$channel}{$time}{'tell'} -> %values {
 								last if %values<to> ne $e.nick;
-								#%values.gist.say;
-								#%values<message>.say;
+								%values.gist.say;
+								%values<message>.say;
+								say "trying to sendmessage";
 								my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
-								$.irc.send: :where($channel) :text( $formated );
+								%!hash{$e.server.host}{$channel}{$time}:delete;
+
+								return %{'where' => $channel, 'text' => $formated};
 							}
-							%!hash{$e.server.host}{$channel}{$time}:delete;
 						}
 					}
 				}

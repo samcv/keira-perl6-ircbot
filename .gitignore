@@ -1,4 +1,6 @@
 _*
+.precomp
+*.json
 *.in.pl
 *.bak
 *.txt

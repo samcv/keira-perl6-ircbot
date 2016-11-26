@@ -24,7 +24,6 @@ class said2 does IRC::Client::Plugin {
 	my $promise;
 	# Describes planned future events. Mode can be '-b' to unban after a specified amount of time.
 	# If mode is `msg` the descriptor will be their nickname, whose value is set to the message.
-	my %chan-mode;     # %chan-mode{$e.server.host}{channel}{time}{mode}{descriptor}
 	my %ops;            # %ops{'nick'}{usermask/hostname}
 	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
 	has Instant $.last-saved-event = now;
@@ -49,8 +48,7 @@ class said2 does IRC::Client::Plugin {
 	# Bans the mask from specified channel
 	sub ban ( $e, $mask, $secs) {
 		my $ban-for = now.Rat + $secs;
-		%chan-mode{$e.server.host}{$e.channel}{$ban-for}{'-b'} = $mask;
-		$chanmode-file.set-hash(%chan-mode);
+		$chanmode-file.schedule-unban($e, $ban-for, $mask);
 		set-mode($e, :mode<+b>, $mask);
 		$e.irc.send: :where($e.channel) :text("Banned for {format-time($ban-for)}");
 	}
@@ -132,44 +130,20 @@ class said2 does IRC::Client::Plugin {
 		if ! $chanmode-file {
 			$chanmode-file = chanmode-class.new( filename => $e.server.current-nick ~ '-ban.json' );
 			$chanmode-file.load;
-			%chan-mode = $chanmode-file.get-hash;
 		}
 		$.tick-supply-interval.tap( {
 			if $_ %% 60 {
 				send-ping($e);
 			}
-			for	$e.server.channels -> $channel {
-				for %chan-mode{$e.server.host}{$channel}.keys -> $time {
-					if $time < now {
-						for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-							#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
-							if $mode ~~ / ^ '-'|'+' / {
-								$.irc.send-cmd: 'MODE', "$channel $mode $descriptor", $e.server;
-								%chan-mode{$e.server.host}{$channel}{$time}:delete;
-							}
-							elsif $mode eq 'remind' {
-								for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
-									#%values.gist.say;
-									#%values<message>.say;
-									my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
-									$.irc.send: :where($channel) :text( $formated );
-								}
-								%chan-mode{$e.server.host}{$channel}{$time}:delete;
-								$chanmode-file.set-hash(%chan-mode);
-							}
-						}
-					}
-				}
-			}
-		 } );
+			my $chanmode = $chanmode-file.mode-schedule($e);
+			$.irc.send-cmd: 'MODE', $chanmode, $e.server if $chanmode;
+		} );
 		$.event_file_supply.act( -> $msg {
 			start {
 				note "Received message $msg for saving";
 				my @write-promises;
 				push @write-promises, $chanevent-file.save($msg.Int);
 				push @write-promises, $history-file.save($msg.Int);
-
-				$chanmode-file.set-hash(%chan-mode);
 				push @write-promises, $chanmode-file.save($msg.Int);
 				note "awaiting processes";
 				await Promise.allof(@write-promises);
@@ -203,30 +177,6 @@ class said2 does IRC::Client::Plugin {
 			say $tell;
 			$.irc.send: :where($tell<where>) :text($tell<text> );
 		}
-
-		%chan-mode = $chanmode-file.get-hash;
-#`[[
-		# FIXME maybe enclose in a start block?
-		for	$e.server.channels -> $channel {
-			for %chan-mode{$e.server.host}{$channel}.keys -> $time {
-				if $time < now {
-					for  %chan-mode{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
-						if $mode eq 'tell' {
-							for %chan-mode{$e.server.host}{$channel}{$time}{'tell'} -> %values {
-								last if %values<to> ne $e.nick;
-								#%values.gist.say;
-								#%values<message>.say;
-								my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
-								$.irc.send: :where($channel) :text( $formated );
-							}
-							%chan-mode{$e.server.host}{$channel}{$time}:delete;
-						}
-					}
-				}
-			}
-		}
-]]
 		my $timer_2 = now;
 		note "1->2: {$timer_2 - $timer_1}" if $debug;
 		if (^30).pick.not {
@@ -355,11 +305,10 @@ class said2 does IRC::Client::Plugin {
 						}
 						# If we know about this person set it
 						my $now = now.Rat + $got;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = now.Rat;
-						$chanmode-file.set-hash(%chan-mode);
+						#method schedule-message ( $e, Str :$message, Str :$to, Num :$when = now.Rat ) {
+
+						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>), :when($now) );
+						
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {
@@ -375,13 +324,7 @@ class said2 does IRC::Client::Plugin {
 						#my $got = string-to-secs("$<time> $<units>");
 						# If we know about this person set it
 						my $now = now.Rat;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'from'} = $e.nick;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'to'} = ~$<nick>;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'message'} = $message;
-						%chan-mode{$e.server.host}{$e.channel}{$now}{'tell'}{'when'} = $now;
-						$chanmode-file.set-hash(%chan-mode);
-						say %chan-mode;
-						say $chanmode-file.get-hash;
+						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>) );
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {

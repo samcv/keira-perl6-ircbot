@@ -93,12 +93,31 @@ my class chanmode-class does perlbot-file is export {
 			}
 		}
 	}
-	method schedule-message ( $e, Str :$message, Str :$to, Num :$when = now.Rat ) {
+	method schedule-message ( $e, Str :$message, Str :$to, Rat :$when = now.Rat ) {
 		%!hash{$e.server.host}{$e.channel}{$when}{'tell'}{'from'} = $e.nick;
 		%!hash{$e.server.host}{$e.channel}{$when}{'tell'}{'to'} = $to;
 		%!hash{$e.server.host}{$e.channel}{$when}{'tell'}{'message'} = $message;
 		%!hash{$e.server.host}{$e.channel}{$when}{'tell'}{'when'} = now.Rat;
 	}
+	method schedule-unban ( $e, $ban-for, $mask ) {
+		%!hash{$e.server.host}{$e.channel}{$ban-for}{'-b'} = $mask;
+	}
+	method mode-schedule ( $e ) {
+		for	$e.server.channels -> $channel {
+			for %!hash{$e.server.host}{$channel}.keys -> $time {
+				if $time < now {
+					for  %!hash{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
+						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+						if $mode ~~ / ^ '-'|'+' / {
+							%!hash{$e.server.host}{$channel}{$time}:delete;
+							return "$channel $mode $descriptor";
+						}
+					}
+				}
+			}
+		}
+	}
+
 	method event-to-do ( $e ) {
 		my @list;
 		for	$e.server.channels -> $channel {

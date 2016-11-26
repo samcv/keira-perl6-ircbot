@@ -1,9 +1,11 @@
 use v6;
 use IRC::Client;
-use IRCTextColor;
 use Inline::Perl5;
 use WebService::UrbanDictionary:from<Perl5>;
-class urban-dictionary does IRC::Client::Plugin {
+# My Modules
+use IRC::TextColor;
+
+class Urban-Dictionary does IRC::Client::Plugin {
 	has $.max-length = 250;
 	method irc-privmsg-channel ($e) {
 		given $e.text {

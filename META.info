@@ -1,14 +1,14 @@
 {
     "perl"        : "6.c",
     "name"        : "Perlbot",
-    "version"     : "v0.9.0",
+    "version"     : "v0.9.2",
     "authors"	  : ["github:samcv"],
-    "description" : "My IRC Bot",
+    "description" : "Keira, an IRC Bot based on IRC::Client",
     "depends"     : ["JSON::Tiny",
                     "IRC::Client",
                     "Terminal::ANSIColor",
                     "WWW::Google::Time",
                     "Text::Markov",
                     "Inline::Perl5"],
-    "source-url"  : "git://github.com/samcv/perlbot.git"
+    "source-url"  : "git://github.com/samcv/keira-perl6-ircbot.git"
 }

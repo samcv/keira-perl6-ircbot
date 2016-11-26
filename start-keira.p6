@@ -1,10 +1,11 @@
 #!/usr/bin/env perl6
 use v6.c;
+# Ecosystem modules
 use IRC::Client;
-use Terminal::ANSIColor;
+# My modules
 use lib 'lib';
-use Perlbot;
-use UrbanDictionary;
+use IRCPlugin::Keira;
+use IRCPlugin::UrbanDictionary;
 
 sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-address,
            Int $server_port, Str $channel, $debug = False ) {
@@ -15,7 +16,7 @@ sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-addres
 		host     => $server-address,
 		channels => $channel,
 		debug    => $debug.Bool,
-		plugins  => (said2.new, urban-dictionary.new)
+		plugins  => (Keira.new, Urban-Dictionary.new)
 	);
 	$irc.run;
 }

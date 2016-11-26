@@ -1,9 +1,11 @@
 use v6.c;
+# Ecosystem Modules
 use IRC::Client;
 use Text::Markov;
 use Terminal::ANSIColor;
 use WWW::Google::Time;
-use IRCTextColor;
+# My Modules
+use IRC::TextColor;
 use ConvertBases;
 use classes;
 use format-time;
@@ -18,7 +20,7 @@ in Perl 6, and the rest is being ported over now.
 
 my $debug = False;
 
-class said2 does IRC::Client::Plugin {
+class Keira does IRC::Client::Plugin {
 	has Str $.said-filename = 'said.pl';
 	has Proc::Async $.proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
 	my $promise;
@@ -308,7 +310,7 @@ class said2 does IRC::Client::Plugin {
 						#method schedule-message ( $e, Str :$message, Str :$to, Num :$when = now.Rat ) {
 
 						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>), :when($now) );
-						
+
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {

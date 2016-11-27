@@ -8,21 +8,18 @@ my role perlbot-file is export {
 	has %!hash;
 	has $!last-saved = 0;
 	method save ( $force? ) {
-		#note "Entered save method for $.filename";
 		if now - $!last-saved > 100 or $force {
 			my Promise $promise = start {
 				note "Starting to write $.filename";
 				try {
 					my $write-t1 = now;
-					#say colored("Trying to update $file data", 'blue');
 					spurt $!filename-bak, to-json( %!hash );
 					my $write-t2 = now;
 					# from-json will throw an exception if it can't process the file
 					# we just wrote
 					from-json(slurp $!filename-bak);
 					my $write-t3 = now;
-					#note "Took {$write-t2 - $write-t1} to save file. Done writing $!filename";
-					#note "Took {$write-t3 - $write-t2} to load file. Done";
+
 					CATCH { .note }
 				}
 				$!file-bak-io.copy($.filename) unless $!.defined;
@@ -56,6 +53,9 @@ my role perlbot-file is export {
 }
 # %ops{'nick'}{usermask/hostname}
 my class ops-class does perlbot-file is export {
+	method ops-file-watch {
+		$.filename.IO.watch.act( { .load } );
+	}
 	method has-ops ( $e ) {
 		if $e.host eq %!hash{$e.nick}{'hostname'} and %!hash.usermask eq %!hash{$e.nick}{'usermask'} {
 			return True;
@@ -66,16 +66,11 @@ my class ops-class does perlbot-file is export {
 # %!hash{$e.server.host}{channel}{time}{mode}{descriptor}
 my class chanmode-class does perlbot-file is export {
 	method tell-nick ( IRC::Client::Message $e ) {
-		say "Calling tell-nick";
-		say %!hash;
 		for	$e.server.channels -> $channel {
-			say $channel;
 			for %!hash{$e.server.host}{$channel}.keys -> $time {
 				if $time < now {
-					say $time;
 					for  %!hash{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-
-						say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
+						#say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
 						if $mode eq 'tell' {
 							for %!hash{$e.server.host}{$channel}{$time}{'tell'} -> %values {
 								last if %values<to> ne $e.nick;

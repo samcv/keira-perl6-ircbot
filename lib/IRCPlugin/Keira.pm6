@@ -7,6 +7,7 @@ use WWW::Google::Time;
 # My Modules
 use IRC::TextColor;
 use ConvertBases;
+use PerlEval;
 use classes;
 use format-time;
 =head1 What
@@ -48,25 +49,25 @@ class Keira does IRC::Client::Plugin {
 		$e.irc.send-cmd: 'MODE', $e.channel, $mode, $argument, :server($e.server);
 	}
 	# Bans the mask from specified channel
-	sub ban ( $e, $mask, $secs) {
+	sub ban ( $e, Str $mask, $secs) {
 		my $ban-for = now.Rat + $secs;
 		$chanmode-file.schedule-unban($e, $ban-for, $mask);
 		set-mode($e, :mode<+b>, $mask);
 		$e.irc.send: :where($e.channel) :text("Banned for {format-time($ban-for)}");
 	}
-	sub unban ( $e, $mask) {
+	sub unban ( $e, Str $mask) {
 		set-mode($e, :mode<-b>, $mask);
 	}
-	sub give-ops ( $e, $nick) {
+	sub give-ops ( $e, Str $nick) {
 		set-mode($e, :mode<+o>, $nick);
 	}
-	sub take-ops ( $e, $nick) {
+	sub take-ops ( $e, Str $nick) {
 		set-mode($e, :mode<-o>, $nick);
 	}
-	sub kick ( $e, $user, $message ) {
+	sub kick ( $e, Str $user, Str $message ) {
 		$e.irc.send-cmd: 'KICK', $e.channel, $user, $message, :server($e.server);
 	}
-	sub topic ( $e, $topic ) {
+	sub topic ( $e, Str $topic ) {
 		$e.irc.send-cmd: 'TOPIC', $e.channel, $topic, :server($e.server);
 	}
 	# Receives an object and checks that the sender is an op
@@ -125,8 +126,9 @@ class Keira does IRC::Client::Plugin {
 			$chanevent-file.load;
 		}
 		if ! $ops-file {
-			$ops-file = perlbot-file.new( filename => $e.server.current-nick ~ '-ops.json' );
+			$ops-file = ops-class.new( filename => $e.server.current-nick ~ '-ops.json' );
 			$ops-file.load;
+			$ops-file.ops-file-watch;
 			%ops = $ops-file.get-hash;
 		}
 		if ! $chanmode-file {
@@ -396,7 +398,7 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!op' ' '? (\S+)? / {
 					if check-ops($e) {
-						my $op-who = $0.defined ?? $0 !! $e.nick;
+						my $op-who = $0.defined ?? ~$0 !! $e.nick;
 						give-ops($e, $op-who);
 					}
 					else {
@@ -437,7 +439,7 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!topic ' $<topic>=(.*) / {
 					if check-ops($e) {
-						topic($e, $<topic>);
+						topic($e, ~$<topic>);
 					}
 				}
 				=head1 Hexidecimal/Decimal/Unicode conversions
@@ -459,13 +461,13 @@ class Keira does IRC::Client::Plugin {
 					$.irc.send: :where($e.channel), :text( convert-bases(:from(~$<from>), :to(~$<to>), ~$<string>) );
 				}
 				when / ^ '!rev ' $<torev>=(.*) / {
-					$.irc.send: :where($e.channel), :text($<torev>.flip);
+					$.irc.send: :where($e.channel), :text(~$<torev>.flip);
 				}
 				when / ^ '!uc ' $<touc>=(.*) / {
-					$.irc.send: :where($e.channel), :text($<touc>.uc);
+					$.irc.send: :where($e.channel), :text(~$<touc>.uc);
 				}
 				when / ^ '!lc ' $<tolc>=(.*) / {
-					$.irc.send: :where($e.channel), :text($<tolc>.lc);
+					$.irc.send: :where($e.channel), :text(~$<tolc>.lc);
 				}
 				=head2 Mentioned
 				=para Gets the last time the specified person mentioned any users the bot knows about.
@@ -508,43 +510,19 @@ class Keira does IRC::Client::Plugin {
 				and error messages.
 				=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
 
-				when / ^ $<lang>=('!p '|'!p6 ') $<cmd>=(.+) / {
+				when / ^ '!' $<lang>=('p'|'p6') ' ' $<cmd>=(.+) / {
+					my $cmd = ~$<cmd>;
 					my $eval-proc;
-					if $<lang> eq '!p ' {
-						$eval-proc = Proc::Async.new: "perl", 'eval.pl', $<cmd>, :r, :w;
+					my $lang;
+					if $<lang> eq 'p' {
+						$lang = 'perl';
 					}
-					elsif $<lang> eq '!p6 ' {
-						$eval-proc = Proc::Async.new: "perl6", '--setting=RESTRICTED', '-e', $<cmd>, :r, :w;
+					elsif $<lang> eq 'p6' {
+						$lang = 'perl6';
 					}
-					my ($stdout-result, $stderr-result);
-					my Tap $eval-proc-stdout = $eval-proc.stdout.tap: $stdout-result ~= *;
-					my Tap $eval-proc-stderr = $eval-proc.stderr.tap: $stderr-result ~= *;
-					my Promise $eval-proc-promise;
-					my $timeout-promise = Promise.in(4);
-					$timeout-promise.then( { $eval-proc.print(chr 3) if $eval-proc-promise.status !~~ Kept } );
 					start {
-						try {
-							$eval-proc-promise = $eval-proc.start;
-							await $eval-proc-promise or $timeout-promise;
-							$eval-proc.close-stdin;
-							$eval-proc.result;
-							CATCH { default { say $_.perl } };
-						};
-						put "OUT: `$stdout-result`\n\nERR: `$stderr-result`";
-						#await $eval-proc-promise or $timeout-promise;
-						return if $timeout-promise.status ~~ Kept;
-							ansi-to-irc($stderr-result);
-							my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
-							for %replace-hash.keys -> $key {
-								$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;
-								$stderr-result ~~ s:g/$key/%replace-hash{$key}/ if $stderr-result;
-							}
-							my $final-output;
-							$final-output ~= "STDOUT«$stdout-result»" if $stdout-result;
-							$final-output ~= "  " if $stdout-result and $stderr-result;
-							$final-output ~= "STDERR«$stderr-result»" if $stderr-result;
-							$.irc.send: :where($e.channel), :text($final-output);
-
+						my $result = perl-eval( :lang($lang), :cmd($cmd) ) ;
+						$.irc.send: :where($e.channel), :text( $result) if $result;
 					}
 				}
 			}

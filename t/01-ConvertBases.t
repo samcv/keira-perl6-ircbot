@@ -1,5 +1,5 @@
-#!perl6
-
+#!/usr/bin/env perl6
+use v6;
 use Test;
 
 use lib 'lib';

@@ -14,3 +14,4 @@ install:
     - panda --notest installdeps .
     - panda --notest install IRC::Client
     - panda --notest install Inline::Perl5
+    - panda --notest install Terminal::ANSIColor

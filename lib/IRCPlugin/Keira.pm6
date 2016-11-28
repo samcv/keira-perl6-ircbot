@@ -29,9 +29,6 @@ class Keira does IRC::Client::Plugin {
 	# If mode is `msg` the descriptor will be their nickname, whose value is set to the message.
 	my %ops;            # %ops{'nick'}{usermask/hostname}
 	has %.strings = { 'unauthorized' => "Your nick/hostname/usermask did not match. You are not authorized to perform this action" };
-	has Instant $.last-saved-event = now;
-	has Instant $.last-saved-history = now;
-	has Instant $.last-saved-ban = now;
 	state history-class $history-file;
 	state chanevent-class $chanevent-file;
 	state chanmode-class $chanmode-file;
@@ -43,8 +40,8 @@ class Keira does IRC::Client::Plugin {
 	has Supply $.event_file_supply = $!event_file_supplier.Supply;
 	has Supply:U $.tick-supply;
 	has Supply:D $.tick-supply-interval = $!tick-supply.interval(1);
-	my $markov;
-	my $markov-lock = Lock.new;
+	state $markov;
+	state $markov-lock = Lock.new;
 	sub set-mode ( $e, Str $argument, Str :$mode) {
 		$e.irc.send-cmd: 'MODE', $e.channel, $mode, $argument, :server($e.server);
 	}
@@ -289,7 +286,7 @@ class Keira does IRC::Client::Plugin {
 				=head2 Saving Channel Event Data
 				=para The command `!SAVE` will cause the channel event data and history file to be saved.
 				Normally it will save when the data changes in memory provided it hasn't already saved
-				within the last 10 seconds
+				within the last 60 seconds
 
 				when /^'!SAVE'/ {
 					$!event_file_supplier.emit( 1 );
@@ -308,41 +305,23 @@ class Keira does IRC::Client::Plugin {
 							last;
 						}
 						# If we know about this person set it
-						my $now = now.Rat + $got;
-						#method schedule-message ( $e, Str :$message, Str :$to, Num :$when = now.Rat ) {
-
-						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>), :when($now) );
+						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>), :when(now.Rat + $got) );
 
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {
 						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
 					}
-					# We should do it the next time they speak
-
 				}
 				when / ^ '!tell ' $<nick>=(\S+) ' '$<message>=(.*) / {
 					say "Nick [{$<nick>}] Message [{$<message>}]";
 					if $chanevent-file.nick-exists(~$<nick>) {
-						my $message = ~$<message>;
-						#my $got = string-to-secs("$<time> $<units>");
-						# If we know about this person set it
-						my $now = now.Rat;
-						$chanmode-file.schedule-message( $e, :message($message), :to(~$<nick>) );
+						$chanmode-file.schedule-message( $e, :message(~$<message>), :to(~$<nick>) );
 						$.irc.send: :where($e.channel), :text("{$e.nick}: I will relay the message to {$<nick>}");
 					}
 					else {
 						$.irc.send: :where($e.channel), :text("{e.nick}: I have never seen this person before");
 					}
-					if $<time> and $<units> {
-						# We have to do it in a specified number of mins
-						my $got = string-to-secs("$<time> $<units>");
-						say $got;
-						$.irc.send: :where($e.channel), :text("{$e.nick}: $got");
-
-					}
-					# We should do it the next time they speak
-
 				}
 				=head1 Operator Commands
 				=para
@@ -566,12 +545,9 @@ class Keira does IRC::Client::Plugin {
 			}
 			note "Starting $!said-filename";
 			$!proc = Proc::Async.new( 'perl', $!said-filename, :w, :r );
-			$!proc.stdout.lines.tap( {
-					my $line = $_;
-					say $line;
+			$!proc.stdout.lines.tap( -> $line is copy {
 					if $line ~~ s/ ^ '%' // {
-						say "Trying to print to {$e.channel} : $line";
-						#$.irc.send: :where($_) :text($line) for .channels;
+						say "Trying to print to {$e.channel} : $line" if $debug;
 						$.irc.send: :where($e.channel), :text($line);
 					}
 

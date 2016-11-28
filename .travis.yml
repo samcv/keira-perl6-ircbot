@@ -11,7 +11,7 @@ before_install:
     - cpanm install WebService::UrbanDictionary
 install:
     - rakudobrew build-panda
-    - panda --notest installdeps .
-    - panda --notest install IRC::Client
-    - panda --notest install Inline::Perl5
-    - panda --notest install Terminal::ANSIColor
+    - panda installdeps --notest .
+    - panda install --notest IRC::Client
+    - panda install --notest Inline::Perl5
+    - panda install --notest Terminal::ANSIColor

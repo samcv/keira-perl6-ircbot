@@ -511,19 +511,8 @@ class Keira does IRC::Client::Plugin {
 				=para `Usage: !p my $var = "Hello Perl 5 World!\n"; print $var`
 
 				when / ^ '!' $<lang>=('p'|'p6') ' ' $<cmd>=(.+) / {
-					my $cmd = ~$<cmd>;
-					my $eval-proc;
-					my $lang;
-					if $<lang> eq 'p' {
-						$lang = 'perl';
-					}
-					elsif $<lang> eq 'p6' {
-						$lang = 'perl6';
-					}
-					start {
-						my $result = perl-eval( :lang($lang), :cmd($cmd) ) ;
-						$.irc.send: :where($e.channel), :text( $result) if $result;
-					}
+					my $lang = $<lang> eq 'p' ?? 'perl' !! 'perl6';
+					start { $.irc.send: :where($e.channel), :text( perl-eval( :lang($lang), :cmd(~$<cmd>) ) ) }
 				}
 			}
 

@@ -125,7 +125,7 @@ class Keira does IRC::Client::Plugin {
 		if ! $ops-file {
 			$ops-file = ops-class.new( filename => $e.server.current-nick ~ '-ops.json' );
 			$ops-file.load;
-			$ops-file.ops-file-watch;
+			#$ops-file.ops-file-watch;
 			%ops = $ops-file.get-hash;
 		}
 		if ! $chanmode-file {
@@ -155,13 +155,18 @@ class Keira does IRC::Client::Plugin {
 			note "Trying to quit. Received SIGINT";
 			$!event_file_supplier.emit( 3 )
 		} );
-		start {
+		my $p = start {
 			$markov-lock.protect( { $markov = Text::Markov.new } );
 			for $history-file.get-hash.values -> $value {
 				markov-feed( $value{'text'} );
 			}
 		}
+		$p.then( { note "Done feeding Markov Chain" if $p.status != Broken } );
 		Nil;
+	}
+	sub send-markov-to-chan ($e) {
+		my $m-prom = start { markov(75) }
+		$m-prom.then( { $e.irc.send: :where($e.channel) :text($m-prom.result) unless $m-prom } );
 	}
 	method irc-privmsg-channel ($e) {
 		my $unrec-time = "Unrecognized time format. Use X ms, sec(s), second(s), min(s), minutes(s), hour(s), week(s), month(s) or year(s)";
@@ -178,7 +183,7 @@ class Keira does IRC::Client::Plugin {
 		my $timer_2 = now;
 		note "1->2: {$timer_2 - $timer_1}" if $debug;
 		if (^30).pick.not {
-			start { $.irc.send: :where($e.channel) :text( markov(75) ) }
+			send-markov-to-chan($e);
 		}
 		my $timer_3 = now;
 		note "2->3: {$timer_3 - $timer_2}" if $debug;
@@ -222,36 +227,49 @@ class Keira does IRC::Client::Plugin {
 				$case = ($options ~~ / i /).Bool if $options.defined;
 				say "Global is $global Case is $case";
 				$before = ':i ' ~ $before if $case;
-				for $history-file.get-hash.sort.reverse.values -> $value {
-					state $i++;
-					last if $i > 30;
-					my Str $sed-text = $value.value<text>;
-					my Str $sed-nick = $value.value<nick>;
-					my $was-sed = False;
-					$was-sed = $value{'sed'} if $value{'sed'};
-					next if $sed-text ~~ m:i{ ^ 's/' };
-					next if $sed-text ~~ m{ ^ '!' };
-					if $sed-text ~~ m/<$before>/ {
-						$sed-text ~~ s:g/<$before>/$after/ if $global;
-						$sed-text ~~ s/<$before>/$after/ if ! $global;
-						irc-style($sed-nick, :color<teal>);
-						my $now = now.Rat;
-						$history-file.add-entry( $now, text => "<$sed-nick> $sed-text", nick => $bot-nick, sed => True );
-						if ! $was-sed {
-							$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
+				my $s-prom = start {
+					for $history-file.get-hash.sort.reverse.values -> $value {
+						state $i++;
+						last if $i > 30;
+						my Str $sed-text = $value.value<text>;
+						my Str $sed-nick = $value.value<nick>;
+						my $was-sed = False;
+						$was-sed = $value{'sed'} if $value{'sed'};
+						next if $sed-text ~~ m:i{ ^ 's/' };
+						next if $sed-text ~~ m{ ^ '!' };
+						if $sed-text ~~ m/<$before>/ {
+							$sed-text ~~ s:g/<$before>/$after/ if $global;
+							$sed-text ~~ s/<$before>/$after/ if ! $global;
+							irc-style($sed-nick, :color<teal>);
+							return %{ text => $sed-text, time => now.Rat, nick => $sed-nick, was-sed => $was-sed };
 						}
-						else {
-							$.irc.send: :where($e.channel) :text("$sed-text");
-						}
-						last;
 					}
+					Nil;
 				}
+				$s-prom.then( {
+					if $s-prom.status == Kept {
+						if $s-prom.result {
+							my %sed-hash = $s-prom.result;
+							my $sed-nick = %sed-hash<nick>;
+							my $sed-text = %sed-hash<text>;
+							my $time = %sed-hash<time>;
+							$history-file.add-entry( $time, text => "<$sed-nick> $sed-text", nick => $bot-nick, sed => True );
+							if $s-prom.result<was-sed> {
+								$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
+
+							}
+							else {
+								$.irc.send: :where($e.channel) :text("$sed-text");
+							}
+						}
+					}
+				} );
 			}
 		}
 		if $e.text.starts-with('!') {
 			given $e.text {
 				when / ^ '!derp' / {
-					start { $.irc.send: :where($e.channel) :text( markov(75) ) }
+					send-markov-to-chan($e);
 				}
 				=head2 Seen
 				=para
@@ -465,16 +483,17 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!time ' (.*) / {
 					my $time-query = ~$0;
-					start {
-						my %google-time;
-						try { %google-time = google-time-in($time-query) };
-						if !$! {
-							$.irc.send: :where($e.channel), :text("It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}");
+					my $g-prom = start { google-time-in($time-query) }
+					$g-prom.then( {
+						if $g-prom == Kept {
+							my %google-time = $g-prom.result;
+							my $response = "It is now {$g-prom.result<str>} in {irc-text($g-prom.result<where>, :color<blue>, :style<bold>)}";
+							$.irc.send: :where($e.channel), :text($response);
 						}
 						else {
 							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
 						}
-					}
+					} );
 				}
 				=head2 Perl 6 Eval
 				=para Evaluates the requested Perl 6 code and returns the output of standard out
@@ -488,11 +507,22 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!' $<lang>=('p'|'p6') ' ' $<cmd>=(.+) / {
 					my $lang = $<lang> eq 'p' ?? 'perl' !! 'perl6';
-					start { $.irc.send: :where($e.channel), :text( perl-eval( :lang($lang), :cmd(~$<cmd>) ) ) }
+					my $e-prom = start {
+						perl-eval( :lang($lang), :cmd(~$<cmd>) );
+					}
+					$e-prom.then( {
+						$.irc.send: :where($e.channel), :text( $e-prom.result ) unless $e-prom == Broken;
+					} );
 				}
 			}
 
 		}
+		#`{{
+		sub then-send ($e, Promise $p) {
+			# then-send($e, start { perl-eval( :lang($lang), :cmd(~$<cmd>) ) });
+			$p.then( { $.irc.send: :where($e.channel), :text( $p.result) unless $p == Broken } );
+		}
+		}}
 		my $timer_4 = now;
 		note "3->4: {$timer_4 - $timer_3}" if $debug;
 		# Do this after Text Substitution

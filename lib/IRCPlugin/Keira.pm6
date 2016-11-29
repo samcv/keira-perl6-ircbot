@@ -140,8 +140,28 @@ class Keira does IRC::Client::Plugin {
 			$.irc.send-cmd: 'MODE', $chanmode, $e.server if $chanmode;
 		} );
 		$.event_file_supply.act( -> $msg {
+			state $last-saved-time;
+			if $last-saved-time.defined.not {
+				note "last saved time not defined so setting now";
+				$last-saved-time = now;
+			}
+			if now - $last-saved-time < 100 and $msg <= 0 {
+				say "I think it's been less than 100 secs or got msg <= 0";
+				say now - $last-saved-time;
+				say "message $msg";
+				last;
+			}
+			else {
+				say "It's been {now - $last-saved-time} since saving. Trying to save now";
+			}
+			$last-saved-time = now;
 			note "Received message $msg for saving" if $debug;
-			my @write-promises;
+			state @write-promises;
+			if any(@write-promises) ~~ Promise {
+				note "matched promises so awaiting";
+				await Promise.allof(@write-promises);
+			}
+			@write-promises = ( );
 			push @write-promises, $chanevent-file.save($msg.Int);
 			push @write-promises, $history-file.save($msg.Int);
 			push @write-promises, $chanmode-file.save($msg.Int);

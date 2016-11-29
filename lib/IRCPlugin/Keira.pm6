@@ -175,6 +175,7 @@ class Keira does IRC::Client::Plugin {
 		my $timer_1 = now;
 		$chanevent-file.update-event($e);
 		my $running;
+		say $history-file.get-hash;
 		my $tell = $chanmode-file.tell-nick($e);
 		if $tell {
 			say $tell;
@@ -228,25 +229,25 @@ class Keira does IRC::Client::Plugin {
 				say "Global is $global Case is $case";
 				$before = ':i ' ~ $before if $case;
 				my $s-prom = start {
+					my %return;
 					for $history-file.get-hash.sort.reverse.values -> $value {
 						state $i++;
 						last if $i > 30;
 						my Str $sed-text = $value.value<text>;
 						my Str $sed-nick = $value.value<nick>;
-						my $was-sed = False;
-						$was-sed = $value{'sed'} if $value{'sed'};
+						my $was-sed = $value{'sed'} ?? True !! False;
 						next if $sed-text ~~ m:i{ ^ 's/' };
 						next if $sed-text ~~ m{ ^ '!' };
 						if $sed-text ~~ m/<$before>/ {
-							$sed-text ~~ s:g/<$before>/$after/ if $global;
-							$sed-text ~~ s/<$before>/$after/ if ! $global;
+							$global ?? $sed-text ~~ s:g/<$before>/$after/ !! $sed-text ~~ s/<$before>/$after/;
 							irc-style($sed-nick, :color<teal>);
-							return %{ text => $sed-text, time => now.Rat, nick => $sed-nick, was-sed => $was-sed };
+							%return =  text => $sed-text, time => now.Rat, nick => $sed-nick, was-sed => $was-sed;
 						}
 					}
-					Nil;
+					%return orelse Nil;
 				}
 				$s-prom.then( {
+					say "PROMISE RESULT: [{$s-prom.result}]";
 					if $s-prom.status == Kept {
 						if $s-prom.result {
 							my %sed-hash = $s-prom.result;
@@ -254,7 +255,7 @@ class Keira does IRC::Client::Plugin {
 							my $sed-text = %sed-hash<text>;
 							my $time = %sed-hash<time>;
 							$history-file.add-entry( $time, text => "<$sed-nick> $sed-text", nick => $bot-nick, sed => True );
-							if $s-prom.result<was-sed> {
+							if ! $s-prom.result<was-sed> {
 								$.irc.send: :where($e.channel) :text("<$sed-nick> $sed-text");
 
 							}

@@ -28,13 +28,23 @@ my role perlbot-file is export {
 	method load {
 		if $.filename.IO.e {
 			say "Trying to load $.filename";
-			my Promise $promise = start { from-json(slurp $.filename) }
+			my $promise = start {
+			%!hash = from-json(slurp $.filename);
+			}
+			await $promise;
+#`{{
+			my Promise $promise = start { my $var = from-json(slurp $.filename); $var; }
 			$promise.then( {
+				say "promise complete for $.filename";
+				say "Promise result: [{$promise.result}]";;
 				if $promise == Kept {
+					say $promise.result;
 					my %hash = $promise.result;
 					%!hash = %hash;
 				}
 			} );
+}}
+			try sink await $promise;
 			return $promise;
 		}
 		else {
@@ -134,6 +144,7 @@ my class history-class does perlbot-file is export {
 		my $now = now;
 		%!hash{$now}{'text'} = $e.text;
 		%!hash{$now}{'nick'} = $e.nick;
+		say %!hash;
 	}
 	method add-entry ( $now, Str :$text, Str :$nick, Bool :$sed = False ) {
 		%!hash{$now} = text => $text, nick => $nick, sed => $sed;

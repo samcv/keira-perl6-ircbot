@@ -19,7 +19,7 @@ A Perl 6+5 bot using the IRC::Client Perl 6 module
 This is an IRC bot in Perl 5 and 6. It was originally only in Perl 5 but the core has now been rewriten
 in Perl 6, and the rest is being ported over now.
 
-my $debug = False;
+my $debug = True;
 
 class Keira does IRC::Client::Plugin {
 	has Str $.said-filename = 'said.pl';
@@ -140,18 +140,15 @@ class Keira does IRC::Client::Plugin {
 			$.irc.send-cmd: 'MODE', $chanmode, $e.server if $chanmode;
 		} );
 		$.event_file_supply.act( -> $msg {
-			start {
-				note "Received message $msg for saving";
-				my @write-promises;
-				push @write-promises, $chanevent-file.save($msg.Int);
-				push @write-promises, $history-file.save($msg.Int);
-				push @write-promises, $chanmode-file.save($msg.Int);
-				note "awaiting processes";
+			note "Received message $msg for saving" if $debug;
+			my @write-promises;
+			push @write-promises, $chanevent-file.save($msg.Int);
+			push @write-promises, $history-file.save($msg.Int);
+			push @write-promises, $chanmode-file.save($msg.Int);
+			if $msg >= 3 {
+				note "Waiting for files to save…";
 				await Promise.allof(@write-promises);
-				note "Done saving";
-				if $msg >= 3 {
-					$.irc.quit;
-				}
+				$.irc.quit;
 			}
 		} );
 		signal(SIGINT).tap( {
@@ -218,22 +215,18 @@ class Keira does IRC::Client::Plugin {
 						$options = ~$1;
 					}
 				}
-				say "Before: {colored($before.Str, 'green')} After: {colored($after.Str, 'green')}";
-				say "Options: {colored($options.Str, 'green')}" if $options;
+				note "Before: {colored($before.Str, 'green')} After: {colored($after.Str, 'green')}" if $debug;
+				note "Options: {colored($options.Str, 'green')}" if $options and $debug;
 				my ( $global, $case )  = False xx 2;
 				$global = ($options ~~ / g /).Bool if $options.defined;
 				$case = ($options ~~ / i /).Bool if $options.defined;
 				say "Global is $global Case is $case";
 				$before = ':i ' ~ $before if $case;
 				for $history-file.get-hash.sort.reverse.values -> $value {
-					state $i = 0;
-					$i++;
-					say $i;
-					say $value.gist;
-					say $value<text>.WHAT;
+					state $i++;
+					last if $i > 30;
 					my Str $sed-text = $value.value<text>;
 					my Str $sed-nick = $value.value<nick>;
-					say $sed-text;
 					my $was-sed = False;
 					$was-sed = $value{'sed'} if $value{'sed'};
 					next if $sed-text ~~ m:i{ ^ 's/' };

@@ -226,9 +226,13 @@ class Keira does IRC::Client::Plugin {
 				say "Global is $global Case is $case";
 				$before = ':i ' ~ $before if $case;
 				for $history-file.get-hash.sort.reverse.values -> $value {
+					state $i = 0;
+					$i++;
+					say $i;
 					say $value.gist;
-					my Str $sed-text = $value<text>;
-					my Str $sed-nick = $value<nick>;
+					say $value<text>.WHAT;
+					my Str $sed-text = $value.value<text>;
+					my Str $sed-nick = $value.value<nick>;
 					say $sed-text;
 					my $was-sed = False;
 					$was-sed = $value{'sed'} if $value{'sed'};

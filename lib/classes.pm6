@@ -133,7 +133,6 @@ my class history-class does perlbot-file is export {
 		my $now = now;
 		%!hash{$now}{'text'} = $e.text;
 		%!hash{$now}{'nick'} = $e.nick;
-		say %!hash;
 	}
 	method add-entry ( $now, Str :$text, Str :$nick, Bool :$sed = False ) {
 		%!hash{$now} = text => $text, nick => $nick, sed => $sed;

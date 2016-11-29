@@ -64,21 +64,14 @@ my class ops-class does perlbot-file is export {
 my class chanmode-class does perlbot-file is export {
 	method tell-nick ( IRC::Client::Message $e ) {
 		say "Calling tell-nick";
-		say %!hash;
 		for	$e.server.channels -> $channel {
-			say $channel;
 			for %!hash{$e.server.host}{$channel}.keys -> $time {
 				if $time < now {
-					say $time;
 					for  %!hash{$e.server.host}{$channel}{$time}.kv -> $mode, $descriptor {
-
 						say "Channel: [$channel] Mode: [$mode] Descriptor: [$descriptor]";
 						if $mode eq 'tell' {
 							for %!hash{$e.server.host}{$channel}{$time}{'tell'} -> %values {
 								last if %values<to> ne $e.nick;
-								%values.gist.say;
-								%values<message>.say;
-								say "trying to sendmessage";
 								my $formated = "{%values<to>}: {%values<from>} said, {%values<message>} " ~ format-time(%values<when>);
 								%!hash{$e.server.host}{$channel}{$time}:delete;
 

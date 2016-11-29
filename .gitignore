@@ -1,6 +1,7 @@
 _*
 .precomp
 *.json
+!t/test-files/*
 *.in.pl
 *.bak
 *.txt

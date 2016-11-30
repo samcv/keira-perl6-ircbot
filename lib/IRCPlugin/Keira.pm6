@@ -532,11 +532,12 @@ class Keira does IRC::Client::Plugin {
 					my $lang = $<lang> eq 'p' ?? 'perl' !! 'perl6';
 					my $cmd = ~$<cmd>;
 					my $e-prom = start {
-						perl-eval( :lang($lang), :cmd($cmd) );
+						my $result = perl-eval( :lang($lang), :cmd($cmd) );
+						$.irc.send: :where($e.channel), :text( $result )
 					}
-					$e-prom.then( {
-						$.irc.send: :where($e.channel), :text( $e-prom.result ) unless $e-prom == Broken;
-					} );
+					#$e-prom.then( {
+					#	$.irc.send: :where($e.channel), :text( $e-prom.result ) unless $e-prom == Broken;
+					#} );
 				}
 			}
 

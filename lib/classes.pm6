@@ -11,7 +11,7 @@ my role perlbot-file is export {
 		if now - $!last-saved > 100 or $force {
 			say "it's been more than 100 secs";
 			my Promise $promise = start { to-json(%!hash) }
-			$promise.then( {
+			my Promise $promise2 = $promise.then( {
 				if $promise.status == Kept {
 					$!file-bak-io.spurt($promise.result);
 					$!file-bak-io.copy($.filename);
@@ -21,7 +21,7 @@ my role perlbot-file is export {
 					note "Promise result [{$promise.result}]";
 				}
 			} );
-			return $promise;
+			return $promise2;
 		}
 		Nil;
 	}

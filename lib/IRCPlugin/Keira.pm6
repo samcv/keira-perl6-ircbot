@@ -506,17 +506,17 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!time ' (.*) / {
 					my $time-query = ~$0;
-					my $g-prom = start { google-time-in($time-query) }
-					$g-prom.then( {
-						if $g-prom == Kept {
-							my %google-time = $g-prom.result;
+					my $g-prom = start {
+						my %google-time = google-time-in($time-query);
+						if %google-time {
 							my $response = "It is now {$g-prom.result<str>} in {irc-text($g-prom.result<where>, :color<blue>, :style<bold>)}";
 							$.irc.send: :where($e.channel), :text($response);
 						}
 						else {
 							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
 						}
-					} );
+					}
+
 				}
 				=head2 Perl 6 Eval
 				=para Evaluates the requested Perl 6 code and returns the output of standard out

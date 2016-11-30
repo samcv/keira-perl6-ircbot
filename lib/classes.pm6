@@ -9,7 +9,7 @@ my role perlbot-file is export {
 	has $!last-saved = 0;
 	method save ( $force? ) {
 		if now - $!last-saved > 100 or $force {
-			say "it's been more than 100 secs";
+			say "it's been more than 100 secs or forced";
 			my Promise $promise = start { to-json(%!hash) }
 			my Promise $promise2 = $promise.then( {
 				if $promise.status == Kept {
@@ -30,9 +30,8 @@ my role perlbot-file is export {
 		if $.filename.IO.e {
 			say "Trying to load $.filename";
 			my $promise = start {
-			%!hash = from-json(slurp $.filename);
+				%!hash = from-json(slurp $.filename);
 			}
-			await $promise;
 			try sink await $promise;
 			return $promise;
 		}

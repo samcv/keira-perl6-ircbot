@@ -157,7 +157,7 @@ class Keira does IRC::Client::Plugin {
 			$last-saved-time = now;
 			note "Received message $msg for saving" if $debug;
 			state @write-promises;
-			if any(@write-promises) ~~ Promise {
+			if any(@write-promises) ~~ Promise:D {
 				note "matched promises so awaiting";
 				await Promise.allof(@write-promises);
 			}
@@ -185,8 +185,11 @@ class Keira does IRC::Client::Plugin {
 		Nil;
 	}
 	sub send-markov-to-chan ($e) {
+		say "in send markov";
 		my $m-prom = start { markov(75) }
-		$m-prom.then( { $e.irc.send: :where($e.channel) :text($m-prom.result) unless $m-prom } );
+		$m-prom.then( {
+			say "trying to send markov";
+			$e.irc.send: :where($e.channel) :text($m-prom.result) if $m-prom.status == Kept } );
 	}
 	method irc-privmsg-channel ($e) {
 		my $unrec-time = "Unrecognized time format. Use X ms, sec(s), second(s), min(s), minutes(s), hour(s), week(s), month(s) or year(s)";

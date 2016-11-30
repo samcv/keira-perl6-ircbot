@@ -530,8 +530,9 @@ class Keira does IRC::Client::Plugin {
 
 				when / ^ '!' $<lang>=('p'|'p6') ' ' $<cmd>=(.+) / {
 					my $lang = $<lang> eq 'p' ?? 'perl' !! 'perl6';
+					my $cmd = ~$<cmd>;
 					my $e-prom = start {
-						perl-eval( :lang($lang), :cmd(~$<cmd>) );
+						perl-eval( :lang($lang), :cmd($cmd) );
 					}
 					$e-prom.then( {
 						$.irc.send: :where($e.channel), :text( $e-prom.result ) unless $e-prom == Broken;

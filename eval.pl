@@ -38,7 +38,7 @@ if ($timedOut) {
 	if ( defined $printBuffer ) { print $printBuffer}
 }
 else {
-	if ( defined $userError and $userError != 0 ) { print STDERR $userError }
+	if ( defined $userError ) { print STDERR $userError }
 	if ( defined $printBuffer ) { print $printBuffer }
 
 }

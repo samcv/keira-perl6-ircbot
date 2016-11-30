@@ -18,7 +18,7 @@ my role perlbot-file is export {
 					$!last-saved = now;
 				}
 				else {
-					note $promise.result;
+					note "Promise result [{$promise.result}]";
 				}
 			} );
 			return $promise;

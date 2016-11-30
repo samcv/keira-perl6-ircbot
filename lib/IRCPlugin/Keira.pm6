@@ -195,7 +195,6 @@ class Keira does IRC::Client::Plugin {
 		my $timer_1 = now;
 		$chanevent-file.update-event($e);
 		my $running;
-		say $history-file.get-hash;
 		my $tell = $chanmode-file.tell-nick($e);
 		if $tell {
 			say $tell;

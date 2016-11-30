@@ -35,10 +35,14 @@ if ($timedOut) {
 	print "Timeout!\n";
 	my $td = timediff( $t1, $t0 );
 	print timestr($td), "\n";
-	if ( defined $printBuffer ) { print $printBuffer}
+	if ( defined $printBuffer ) { print $printBuffer }
 }
 else {
-	if ( defined $userError ) { print STDERR $userError }
+	if ( defined $userError ) {
+		if ($userError ne '0') {
+			print STDERR $userError
+			}
+	}
 	if ( defined $printBuffer ) { print $printBuffer }
 
 }

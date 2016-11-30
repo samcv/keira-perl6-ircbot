@@ -5,7 +5,7 @@ use JSON::Tiny;
 
 use lib <lib>;
 use classes;
-#plan 5;
+plan 5;
 my $file-orig = slurp 't/test-files/placeholder.json';
 
 my $thing = perlbot-file.new( filename => 't/test-files/placeholder.json' );

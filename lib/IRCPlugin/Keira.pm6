@@ -509,7 +509,7 @@ class Keira does IRC::Client::Plugin {
 					my $g-prom = start {
 						my %google-time = google-time-in($time-query);
 						if %google-time {
-							my $response = "It is now {$g-prom.result<str>} in {irc-text($g-prom.result<where>, :color<blue>, :style<bold>)}";
+							my $response = "It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}";
 							$.irc.send: :where($e.channel), :text($response);
 						}
 						else {

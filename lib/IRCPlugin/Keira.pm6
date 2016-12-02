@@ -442,7 +442,7 @@ class Keira does IRC::Client::Plugin {
 				when m{ ^ '!kick ' $<kick-who>=(\S+) ' '? $<message>=(.+)? } {
 					my $message = $<message> ?? $<message> !! "Better luck next time";
 					if check-ops($e) {
-						kick( $e, $<kick-who>, $message );
+						kick( $e, ~$<kick-who>, $message );
 					}
 					else {
 						$.irc.send: :where($e.channel), :text(%.strings<unauthorized>);
@@ -542,12 +542,6 @@ class Keira does IRC::Client::Plugin {
 			}
 
 		}
-		#`{{
-		sub then-send ($e, Promise $p) {
-			# then-send($e, start { perl-eval( :lang($lang), :cmd(~$<cmd>) ) });
-			$p.then( { $.irc.send: :where($e.channel), :text( $p.result) unless $p == Broken } );
-		}
-		}}
 		my $timer_4 = now;
 		note "3->4: {$timer_4 - $timer_3}" if $debug;
 		# Do this after Text Substitution

@@ -22,16 +22,17 @@ class Unicodable does IRC::Client::Plugin {
     method irc-privmsg-channel ($e) {
         if $e.text.starts-with('u: ') {
             start {
-                    my $text = $e.text;
+                my $text = $e.text;
                 $text ~~ s/ ^ 'u: ' //;
-                my $output = process($text);
-                my $i;
-                for $output.lines {
-                    $i++;
-                    last if $i > 4;
-                    $e.irc.send: :where($e.channel) :text(~$_);
-                    sleep 1;
+                my @output = process($text, $e).lines;
+                my $out = @output.join("\n");
+                if @output.elems > MESSAGE-LIMIT {
+                    "unicode.txt".IO.spurt($out);
+                    my $link = qx<pastebinit -P -b sprunge.us ./unicode.txt>;
+                    say "link: [$link]";
+                    say-to-chan($link, $e);
                 }
+                #say $out;
             }
         }
         $.NEXT;
@@ -40,6 +41,14 @@ class Unicodable does IRC::Client::Plugin {
     sub help($message) {
         “Just type any unicode character or part of a character name. Alternatively, you can also provide a code snippet or a regex”
     };
+    sub say-to-chan ($text, $e) {
+        start {
+            for $text.lines {
+                $e.irc.send: :where($e.channel) :text(~$_);
+                sleep 0.8;
+            }
+        }
+    }
 
 
     sub get-description($ord) {
@@ -51,7 +60,7 @@ class Unicodable does IRC::Client::Plugin {
         }
         sprintf("U+%04X %s [%s] (%s)", $ord, uniname($ord), uniprop($ord), $char)
     }
-    sub process ($query is copy) {
+    sub process ($query is copy, $e) {
         my $old-dir = $*CWD;
         my $filename;
         my $output;
@@ -70,7 +79,7 @@ class Unicodable does IRC::Client::Plugin {
                                     and (!@props or uniprop($_) eq @props.any) }) {
                 my $char-desc = get-description($_);
                 @all.push: $char-desc;
-                return $char-desc if @all < MESSAGE-LIMIT; # >;
+                say-to-chan($char-desc, $e) if @all < MESSAGE-LIMIT; # >;
             }
         }
         elsif $query ~~ /^ ‘/’ / {
@@ -81,7 +90,7 @@ class Unicodable does IRC::Client::Plugin {
                 try {
                     my $char-desc = get-description(+$_);
                     @all.push: $char-desc;
-                    return $char-desc if @all < MESSAGE-LIMIT; # >;
+                    say-to-chan( $char-desc, $e) if @all < MESSAGE-LIMIT; # >;
                     CATCH {
                         .say;
                         return ‘Oops, something went wrong!’;

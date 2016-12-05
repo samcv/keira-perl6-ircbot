@@ -6,9 +6,10 @@ use IRC::Client;
 use lib 'lib';
 use IRCPlugin::Keira;
 use IRCPlugin::UrbanDictionary;
+use IRCPlugin::Unicodable;
 
 sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-address,
-           Int $server_port, Str $channel, $debug = False ) {
+           Int $server_port, Str $channel, Bool :$debug = False ) {
 	my $irc = IRC::Client.new(
 		nick     => $bot-username,
 		userreal => $real-name,
@@ -16,7 +17,7 @@ sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-addres
 		host     => $server-address,
 		channels => $channel,
 		debug    => $debug.Bool,
-		plugins  => (Keira.new, Urban-Dictionary.new)
+		plugins  => (Keira.new, Unicodable.new, UrbanDictionary.new)
 	);
 	$irc.run;
 }

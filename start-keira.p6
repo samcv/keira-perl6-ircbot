@@ -17,7 +17,7 @@ sub MAIN ( Str $bot-username, Str $user-name, Str $real-name, Str $server-addres
 		host     => $server-address,
 		channels => $channel,
 		debug    => $debug.Bool,
-		plugins  => (Keira.new, Unicodable.new, UrbanDictionary.new)
+		plugins  => (Keira.new, Unicodable.new, Urban-Dictionary.new)
 	);
 	$irc.run;
 }

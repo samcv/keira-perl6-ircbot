@@ -1,13 +1,20 @@
 #!/usr/bin/env perl
+package CurlTitle;
+use Exporter 'import';
+@EXPORT = qw(get_url_title_new curl_exit_codes);
+@EXPORT_OK = qw(get_url_title_new curl_exit_codes);
+#use base Exporter;
 use strict;
 use warnings;
 use utf8;
 use feature 'unicode_strings';
+binmode STDOUT, ':encoding(UTF-8)';
+binmode STDERR, ':encoding(UTF-8)';
 use English;
 use HTML::Entities 'decode_entities';
 use lib::TryDecode qw(try_decode);
-use Exporter qw(import);
-our @EXPORT_OK = qw(text_style);
+#our @EXPORT_OK = qw(text_style);
+
 
 sub process_curl {
 	my ( $curl_pid, $CURL_OUT, $CURL_STDERR ) = @_;

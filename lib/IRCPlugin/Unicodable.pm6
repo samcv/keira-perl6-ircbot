@@ -21,15 +21,17 @@ constant MESSAGE-LIMIT = 4;
 class Unicodable does IRC::Client::Plugin {
     method irc-privmsg-channel ($e) {
         if $e.text.starts-with('u: ') {
-            my $text = $e.text;
-            $text ~~ s/ ^ 'u: ' //;
-            my $output = process($text);
-            my $i;
-            for $output.lines {
-                $i++;
-                last if $i > 4;
-                $e.irc.send: :where($e.channel) :text(~$_);
-                sleep 1;
+            start {
+                    my $text = $e.text;
+                $text ~~ s/ ^ 'u: ' //;
+                my $output = process($text);
+                my $i;
+                for $output.lines {
+                    $i++;
+                    last if $i > 4;
+                    $e.irc.send: :where($e.channel) :text(~$_);
+                    sleep 1;
+                }
             }
         }
         $.NEXT;

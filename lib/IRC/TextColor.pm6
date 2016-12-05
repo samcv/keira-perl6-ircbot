@@ -62,9 +62,12 @@ sub irc-style-char ( Str $style ) is export {
 sub irc-color-start ( Str $color ) is export {
 	return %irc-styles{'color'} ~ %irc-colors{$color} if %irc-colors{$color};
 }
-sub irc-text ($text is copy, :$color? = 0, :$style? = 0) is export {
-	given $color {
-		if %irc-colors{$color} {
+sub irc-text ( $text is copy, :$style? = 0, :$color? = 0, :$bgcolor? = 0 ) is export {
+	if $color or $bgcolor {
+		if $color and $bgcolor {
+			$text = %irc-styles<color> ~ %irc-colors{$color} ~ ',' ~ %irc-colors{$bgcolor} ~ $text ~ %irc-styles<reset>;
+		}
+		elsif %irc-colors{$color} {
 			$text = %irc-styles{'color'} ~ %irc-colors{$color} ~ $text ~ %irc-styles{'reset'};
 		}
 	}

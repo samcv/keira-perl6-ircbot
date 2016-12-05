@@ -10,26 +10,14 @@ sub convert-bases ( Str $string, Str :$from, Str :$to ) returns Str is export {
 		@nums = $string.ords;
 	}
 	my $output;
-	given $to {
-		when 'uni'|'unicode' {
-			$output = @nums.chrs;
-		}
-		when 'decimal'|'dec' {
-			$output = @nums.join(' ');
-			$output .= trim;
-		}
-		when 'hexadecimal'|'hex' {
-			for @nums { $output ~= sprintf("%x ", $_) }
-			$output .= trim;
-		}
-		when 'octal'|'oct' {
-			for @nums { $output ~= sprintf("%o ", $_) }
-			$output .= trim;
-		}
-		when 'binary'|'bin' {
-			for @nums { $output ~= sprintf("%b ", $_) }
-			$output .= trim;
-		}
+	my %hash = bin => 2, binary => 2, oct => 8, octal => 8, dec => 10, decimal => 10, hex => 16, hexadecimal => 16;
+
+	if %hash{$to} {
+		for @nums { $output ~= sprintf "%s ", $_.base(%hash{$to}) }
+		$output .= trim;
+	}
+	elsif $to eq 'uni'|'unicode' {
+		$output = @nums.chrs;
 	}
 	$output;
 }

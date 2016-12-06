@@ -182,7 +182,7 @@ class Keira does IRC::Client::Plugin {
 			}
 		}
 		$p.then( { note "Done feeding Markov Chain" if $p.status != Broken } );
-		Nil;
+		$.NEXT;
 	}
 	sub send-markov-to-chan ($e) {
 		say "in send markov";

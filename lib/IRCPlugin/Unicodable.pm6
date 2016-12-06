@@ -98,7 +98,7 @@ class Unicodable does IRC::Client::Plugin {
             }
             else {
                 for $self.hash.kv -> $codepoint, $name {
-                    if $name.key.contains(@words) {
+                    if $name.key.words.contains(@words) {
                         thingy $codepoint, $name;
                     }
                 }

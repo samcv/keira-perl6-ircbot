@@ -32,7 +32,7 @@ class Unicodable does IRC::Client::Plugin {
                     }
                 }
             }
-            say @results if @results.elems < $self.MAX;
+            say-to-chan @results, $e if @results.elems < $self.MAX;
             if @results.elems > $self.MAX {
                 "unicode.txt".IO.spurt(@results.join("\n"));
                 my $link = qx<pastebinit -P -b sprunge.us ./unicode.txt>;

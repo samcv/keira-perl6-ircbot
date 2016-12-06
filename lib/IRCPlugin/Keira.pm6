@@ -86,7 +86,7 @@ class Keira does IRC::Client::Plugin {
 			$markov-text.Str;
 	}
 	multi markov-feed ( Str $string is copy ) {
-		if $string !~~ / ^ '!'|'s/' / {
+		if $string !~~ / ^ '!'|'s/'|[\S': '] / {
 			$string ~~ s/$/ /;
 			$string ~~ s:g/(\S+) ('.'|'!'|':'|';'|',') ' '/ $0 $1 /;
 			$markov-lock.protect( {	$markov.feed( $string.words ) } );

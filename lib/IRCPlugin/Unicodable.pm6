@@ -6,6 +6,8 @@
 
 use v6.c;
 use IRC::Client;
+# My modules
+use P5-to-P6-Regex;
 constant MESSAGE-LIMIT = 4;
 my %unicode-props =
     Lu => 'Letter, uppercase',
@@ -66,15 +68,38 @@ class Unicodable does IRC::Client::Plugin {
             query-code($query.Num.chr, $e, $self);
         }
         else {
+            my $is-regex = False;
+            say $query;
+            if $query ~~ / ^ '/' .* '/' $ / {
+                $query ~~ s/ ^ '/' //;
+                $query ~~ s/ '/' $ //;
+                say $query;
+                 $is-regex = True;
+                 $query = P5-to-P6-Regex($query);
+                 say $query;
+            }
             my @words = $query.uc.words;
             my @results;
-            for $self.hash.kv -> $codepoint, $name {
-                if $name.key.contains(@words) {
-                    my $result = format-codes($codepoint, $name.key, $name.value);
-                    #my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $name.key, $name.value;
-                    push @results, $result;
-                    if @results.elems == $self.MAX {
-                        say-to-chan @results, $e;
+            sub thingy ( $codepoint, $name ) {
+                my $result = format-codes($codepoint, $name.key, $name.value);
+                #my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $name.key, $name.value;
+                push @results, $result;
+                if @results.elems == $self.MAX {
+                    say-to-chan @results, $e;
+                }
+            }
+            if $is-regex {
+                for $self.hash.kv -> $codepoint, $name {
+                    if $name.key ~~ /<$query>/ {
+                        thingy $codepoint, $name;
+                    }
+                }
+
+            }
+            else {
+                for $self.hash.kv -> $codepoint, $name {
+                    if $name.key.contains(@words) {
+                        thingy $codepoint, $name;
                     }
                 }
             }

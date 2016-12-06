@@ -5,6 +5,7 @@ use Text::Markov;
 use Terminal::ANSIColor;
 use WWW::Google::Time;
 # My Modules
+use P5-to-P6-Regex;
 use IRC::TextColor;
 use ConvertBases;
 use PerlEval;
@@ -157,9 +158,8 @@ class Keira does IRC::Client::Plugin {
 			$last-saved-time = now;
 			note "Received message $msg for saving" if $debug;
 			state @write-promises;
-			if any(@write-promises) ~~ Promise:D {
-				note "matched promises so awaiting";
-				await Promise.allof(@write-promises);
+			for @write-promises -> $p {
+				await $p if $p ~~ Promise:D;
 			}
 			@write-promises = ( );
 			push @write-promises, $chanevent-file.save($msg.Int);

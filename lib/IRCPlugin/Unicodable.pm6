@@ -7,32 +7,71 @@
 use v6.c;
 use IRC::Client;
 constant MESSAGE-LIMIT = 4;
+my %unicode-props =
+    Lu => 'Letter, uppercase',
+    Ll => 'Letter, lowercase',
+    Lt => 'Letter, titlecase',
+    Lm => 'Letter, modifier',
+    Lo => 'Letter, other',
+    Mn => 'Mark, nonspacing',
+    Me => 'Mark, enclosing',
+    Nd => 'Number, decimal digit',
+    Nl => 'Number, letter',
+    No => 'Number, other',
+    Pc => 'Punctuation, connector',
+    Pd => 'Punctuation, dash',
+    Pe => 'Punctuation, close',
+    Pi => 'Punctuation, initial quote',
+    Pf => 'Punctuation, final quote',
+    Po => 'Punctuation, other',
+    Sm => 'Symbol, math',
+    Sc => 'Symbol, currency',
+    Sk => 'Symbol, modifier',
+    So => 'Symbol, other',
+    Zs => 'Separator, space',
+    Zl => 'Separator, line',
+    Zp => 'Separator, paragraph',
+    Cc => 'Other, control',
+    Cf => 'Other, format',
+    Cs => 'Other, surrogate',
+    Co => 'Other, private use',
+    Cn => 'Other, not assigned';
+
 class Unicodable does IRC::Client::Plugin {
     has %.hash;
     has $.MAX = 4;
     sub format-codes ($codepoint, $description, $type) {
-        my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $description, $type;
+        my $type-str = %unicode-props{$type} ?? " {%unicode-props{$type}}" !! "";
+        my $result = sprintf "U+%s %s %s [%s]%s", (sprintf "%x", $codepoint).uc, $codepoint.chr, $description, $type, $type-str;
         $result;
+    }
+    sub query-code ( Str $query is copy, $e, $self ) {
+        my $codepoint = $query.ord;
+        if $self.hash{$codepoint} {
+            my $response = format-codes($codepoint, uniname($codepoint), uniprop($codepoint));
+            say-to-chan $response, $e;
+        }
+        else {
+            say-to-chan "Can't find that codepoint?", $e;
+        }
     }
     sub get-query ( Str $query is copy, $e, $self ) is export {
         $query .= trim;
         say "this many codes {$query.codes}";
         if $query.codes == 1 {
-            my $codepoint = $query.ord;
-            if $self.hash{$codepoint} {
-                my $response = format-codes($codepoint, uniname($codepoint), uniprop($codepoint));
-                say-to-chan $response, $e;
-            }
-            else {
-                say-to-chan "Can't find that codepoint?", $e;
-            }
+            query-code($query, $e, $self);
+        }
+        elsif $query ~~ m:i/ ^ '0x' [ \d | <[a..f]> ]+ $ / {
+            say "looks like a number";
+            query-code($query.Num.chr, $e, $self);
         }
         else {
             my @words = $query.uc.words;
             my @results;
             for $self.hash.kv -> $codepoint, $name {
                 if $name.key.contains(@words) {
-                    my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $name.key, $name.value;
+                    my $result = format-codes($codepoint, $name.key, $name.value);
+                    #my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $name.key, $name.value;
                     push @results, $result;
                     if @results.elems == $self.MAX {
                         say-to-chan @results, $e;

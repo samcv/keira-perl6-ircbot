@@ -205,7 +205,7 @@ class Keira does IRC::Client::Plugin {
 		}
 		my $timer_2 = now;
 		note "1->2: {$timer_2 - $timer_1}" if $debug;
-		if (^30).pick.not {
+		if (^50).pick.not {
 			send-markov-to-chan($e);
 		}
 		my $timer_3 = now;

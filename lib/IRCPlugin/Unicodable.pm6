@@ -10,14 +10,21 @@ constant MESSAGE-LIMIT = 4;
 class Unicodable does IRC::Client::Plugin {
     has %.hash;
     has $.MAX = 4;
+    sub format-codes ($codepoint, $description, $type) {
+        my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $description, $type;
+        $result;
+    }
     sub get-query ( Str $query is copy, $e, $self ) is export {
         $query .= trim;
+        say "this many codes {$query.codes}";
         if $query.codes == 1 {
-            if $self.hash{$query.ord} {
-                say-to-chan $self.hash{$query}, $e;
+            my $codepoint = $query.ord;
+            if $self.hash{$codepoint} {
+                my $response = format-codes($codepoint, uniname($codepoint), uniprop($codepoint));
+                say-to-chan $response, $e;
             }
             else {
-                say-to-chan "Can't find that codepoint?", $e
+                say-to-chan "Can't find that codepoint?", $e;
             }
         }
         else {
@@ -32,7 +39,14 @@ class Unicodable does IRC::Client::Plugin {
                     }
                 }
             }
-            say-to-chan @results, $e if @results.elems < $self.MAX;
+            if @results.elems < $self.MAX {
+                if @results.elems < 1 {
+                    say-to-chan "Can't find anything", $e;
+                }
+                else {
+                    say-to-chan @results, $e;
+                }
+            }
             if @results.elems > $self.MAX {
                 "unicode.txt".IO.spurt(@results.join("\n"));
                 my $link = qx<pastebinit -P -b sprunge.us ./unicode.txt>;

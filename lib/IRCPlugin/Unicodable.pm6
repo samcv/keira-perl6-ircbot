@@ -10,6 +10,11 @@ use IRC::Client;
 use P5-to-P6-Regex;
 constant MESSAGE-LIMIT = 4;
 my %unicode-props =
+    Cc => 'Other, control',
+    Cf => 'Other, format',
+    Cs => 'Other, surrogate',
+    Co => 'Other, private use',
+    Cn => 'Other, not assigned',
     Lu => 'Letter, uppercase',
     Ll => 'Letter, lowercase',
     Lt => 'Letter, titlecase',
@@ -26,6 +31,7 @@ my %unicode-props =
     Pi => 'Punctuation, initial quote',
     Pf => 'Punctuation, final quote',
     Po => 'Punctuation, other',
+    Ps => 'Punctuation, open',
     Sm => 'Symbol, math',
     Sc => 'Symbol, currency',
     Sk => 'Symbol, modifier',
@@ -33,11 +39,8 @@ my %unicode-props =
     Zs => 'Separator, space',
     Zl => 'Separator, line',
     Zp => 'Separator, paragraph',
-    Cc => 'Other, control',
-    Cf => 'Other, format',
-    Cs => 'Other, surrogate',
-    Co => 'Other, private use',
-    Cn => 'Other, not assigned';
+
+;
 
 class Unicodable does IRC::Client::Plugin {
     has %.hash;

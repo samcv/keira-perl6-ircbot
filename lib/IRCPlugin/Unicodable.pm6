@@ -84,9 +84,7 @@ class Unicodable does IRC::Client::Plugin {
             my @words = $query.uc.words;
             my @results;
             sub thingy ( $codepoint, $name ) {
-                my $result = format-codes($codepoint, $name.key, $name.value);
-                #my $result = sprintf "U+%s %s %s [%s]", (sprintf "%x", $codepoint).uc, $codepoint.chr, $name.key, $name.value;
-                push @results, $result;
+                push @results, format-codes($codepoint, $name.key, $name.value);
                 if @results.elems == $self.MAX {
                     say-to-chan @results, $e;
                 }
@@ -98,6 +96,13 @@ class Unicodable does IRC::Client::Plugin {
                     }
                 }
 
+            }
+            elsif $query ~~ / ^ \s* 'type: ' $<type>=(\S\S) / {
+                for $self.hash.kv -> $codepoint, $name {
+                    if $name.value eq $<type> {
+                        thingy $codepoint, $name;
+                    }
+                }
             }
             else {
                 for $self.hash.kv -> $codepoint, $name {

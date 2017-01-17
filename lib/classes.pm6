@@ -122,7 +122,7 @@ my class chanmode-class does perlbot-file is export {
 }
 my class history-class does perlbot-file is export {
 	method add-history ( IRC::Client::Message $e ) {
-		my $now = now;
+		my $now = now.Rat;
 		%!hash{$now}{'text'} = $e.text;
 		%!hash{$now}{'nick'} = $e.nick;
 	}

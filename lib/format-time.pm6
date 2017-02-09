@@ -45,7 +45,7 @@ sub format-time ( $time-since-epoch ) is export {
 	my $sign = $tell_time_diff < 0 ?? "" !! "ago";
 	$tell_time_diff .= abs;
 	say $tell_time_diff;
-	return irc-text('[Just now]', :color<teal>) if $tell_time_diff < 1;
+	return irc-style-text('[Just now]', :color<teal>) if $tell_time_diff < 1;
 	#return "[Just Now]" if $tell_time_diff < 1;
 	my %time-hash = from-secs($tell_time_diff);
 	$tell_return = '[';
@@ -54,5 +54,5 @@ sub format-time ( $time-since-epoch ) is export {
 		$tell_return ~= " $key ";
 	}
 	$tell_return ~= "$sign]";
-	return irc-text($tell_return, :color<teal> );
+	return irc-style-text($tell_return, :color<teal> );
 }

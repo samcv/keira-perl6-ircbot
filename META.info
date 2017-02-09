@@ -9,6 +9,7 @@
                     "Terminal::ANSIColor",
                     "WWW::Google::Time",
                     "Text::Markov",
-                    "Inline::Perl5"],
+                    "Inline::Perl5",
+					"IRC::TextColor"],
     "source-url"  : "git://github.com/samcv/keira-perl6-ircbot.git"
 }

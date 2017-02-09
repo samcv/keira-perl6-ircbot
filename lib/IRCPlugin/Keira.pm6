@@ -262,7 +262,7 @@ class Keira does IRC::Client::Plugin {
 						next if $sed-text ~~ m{ ^ '!' };
 						if $sed-text ~~ m/<$before>/ {
 							$global ?? $sed-text ~~ s:g/<$before>/$after/ !! $sed-text ~~ s/<$before>/$after/;
-							irc-style($sed-nick, :color<teal>);
+							$sed-nick = irc-style-text($sed-nick, :color<teal>);
 							%return =  text => $sed-text, time => now.Rat, nick => $sed-nick, was-sed => $was-sed;
 						}
 					}
@@ -314,10 +314,10 @@ class Keira does IRC::Client::Plugin {
 						else {
 							$second = $pair.value;
 						}
-						$seen-time ~= irc-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
+						$seen-time ~= irc-style-text($pair.key.tc, :style<underline>) ~ ': ' ~ $second ~ ' ';
 					}
 					if $chanevent-file.nick-exists($seen-nick) {
-						irc-style($seen-nick, :color<blue>, :style<bold>);
+						$seen-nick = irc-style-text($seen-nick, :color<blue>, :style<bold>);
 						$.irc.send: :where($e.channel), :text("$seen-nick $seen-time");
 					}
 				}
@@ -509,11 +509,11 @@ class Keira does IRC::Client::Plugin {
 					my $g-prom = start {
 						my %google-time = google-time-in($time-query);
 						if %google-time {
-							my $response = "It is now {%google-time<str>} in {irc-text(%google-time<where>, :color<blue>, :style<bold>)}";
+							my $response = "It is now {%google-time<str>} in {irc-style-text(%google-time<where>, :color<blue>, :style<bold>)}";
 							$.irc.send: :where($e.channel), :text($response);
 						}
 						else {
-							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-text($time-query, :color<blue>, :style<bold>)}");
+							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-style-text($time-query, :color<blue>, :style<bold>)}");
 						}
 					}
 

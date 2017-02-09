@@ -26,10 +26,10 @@ class Urban-Dictionary does IRC::Client::Plugin {
 					$example .= subst(0, $.max-length);
 					$definition .= subst(0, $.max-length);
 
-					my $one-line = irc-text(:style<bold>, "{$def.word}: ") ~ $definition ~ ' ' ~ irc-text(:style<italic>, $example);
+					my $one-line = irc-style-text(:style<bold>, "{$def.word}: ") ~ $definition ~ ' ' ~ irc-style-text(:style<italic>, $example);
 					if $one-line.chars > 300 {
-						my $first-line = irc-text(:style<bold>, "{$def.word}: ") ~ $definition;
-						my $second-line = irc-text(:style<italic>, $example);
+						my $first-line = irc-style-text(:style<bold>, "{$def.word}: ") ~ $definition;
+						my $second-line = irc-style-text(:style<italic>, $example);
 						$.irc.send: :where($e.channel) :text( $first-line );
 						$.irc.send: :where($e.channel) :text( $second-line );
 					}

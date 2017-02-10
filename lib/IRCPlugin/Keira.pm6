@@ -252,7 +252,7 @@ class Keira does IRC::Client::Plugin {
 				$before = ':i ' ~ $before if $case;
 				my $s-prom = start {
 					my %return;
-					for $history-file.get-hash.sort.reverse.values -> $value {
+					for $history-file.get-hash.sort(-*.key).values -> $value {
 						state $i++;
 						last if $i > 30;
 						my Str $sed-text = $value.value<text>;

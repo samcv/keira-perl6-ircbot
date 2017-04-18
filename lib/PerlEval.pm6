@@ -27,7 +27,8 @@ sub perl-eval ( Str :$lang, Str :$cmd ) returns Str is export {
 		CATCH { default { #`( say $_.perl ) } };
 	};
 	return Nil if $timeout-promise.status ~~ Kept;
-		ansi-to-irc($stderr-result) if $stderr-result;
+		$stderr-result = ansi-to-irc($stderr-result) if $stderr-result;
+		$stdout-result = ansi-to-irc($stdout-result) if $stdout-result;
 		my %replace-hash = "\n" => '␤', "\r" => '↵', "\t" => '↹';
 		for %replace-hash.keys -> $key {
 			$stdout-result ~~ s:g/$key/%replace-hash{$key}/ if $stdout-result;

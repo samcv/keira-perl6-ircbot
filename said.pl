@@ -637,7 +637,7 @@ while (<>) {
 	my ( $one, $two ) = find_url($body);
 	url_format_text( $one, $two, $who_said, $body, $channel, $bot_username );
 
-	if ( $body =~ /\s:[(]\s*$/ or $body =~ /^\s*:[(]\s*$/ ) {
+	if ( $body =~ /\s:[(]\s*$/ or $body =~ /^\s*:[(]\s*$/ and $who_said ne "eater") {
 		my @cheer = ( q/Turn that frown upside down :)/, q/Cheer up! Don't be so sad!/ );
 		my $cheer_text = $cheer[ rand @cheer ];
 		msg_same_origin( $who_said, "$who_said, $cheer_text" );

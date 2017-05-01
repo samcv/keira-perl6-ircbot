@@ -5,7 +5,7 @@ my %secs-per-unit = :years<15778800>, :months<1314900>, :days<43200>,
 					:hours<3600>, :mins<60>, :secs<1>, :ms<0.001>;
 sub from-secs ( $secs-since-epoch is copy ) is export  {
 	my %time-hash;
-	for %secs-per-unit.sort(*.value).reverse -> $pair {
+	for %secs-per-unit.sort(*.value.Numeric).reverse -> $pair {
 		if $secs-since-epoch >= $pair.value {
 			%time-hash{$pair.key} = $secs-since-epoch / $pair.value;
 			$secs-since-epoch -= %time-hash{$pair.key} * $pair.value;

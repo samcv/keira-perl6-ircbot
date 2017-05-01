@@ -10,8 +10,5 @@ before_install:
     - perlbrew -f install-cpanm
     - cpanm install WebService::UrbanDictionary
 install:
-    - rakudobrew build-panda
-    - panda installdeps --notests .
-    - panda install --notests IRC::Client
-    - panda install --notests Inline::Perl5
-    - panda install --notests Terminal::ANSIColor
+    - rakudobrew build-zef
+    - zef --depsonly .

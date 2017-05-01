@@ -177,7 +177,7 @@ class Keira does IRC::Client::Plugin {
 		} );
 		my $p = start {
 			$markov-lock.protect( { $markov = Text::Markov.new } );
-			for $history-file.get-hash.values -> $value {
+			for $history-file.get-history».values -> $value {
 				markov-feed( $value{'text'} );
 			}
 		}
@@ -252,7 +252,7 @@ class Keira does IRC::Client::Plugin {
 				$before = ':i ' ~ $before if $case;
 				start {
 					my %return;
-					for $history-file.get-hash.sort(-*.key).values -> $value {
+					for $history-file.get-history -> $value {
 						state $i++;
 						#last if $i > 30;
 						my Str $sed-text = $value.value<text>;

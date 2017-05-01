@@ -121,13 +121,22 @@ my class chanmode-class does perlbot-file is export {
 
 }
 my class history-class does perlbot-file is export {
+	has @!history;
+	method TWEAK {
+		%!hash<HISTORY> := @!history;
+	}
 	method add-history ( IRC::Client::Message $e ) {
 		my $now = now.Rat;
-		%!hash{$now}{'text'} = $e.text;
-		%!hash{$now}{'nick'} = $e.nick;
+	#	%!hash{$now}{'text'} = $e.text;
+	#	%!hash{$now}{'nick'} = $e.nick;
+		@!history.unshift: $now => { 'text' => $e.text, 'nick' => $e.nick };
 	}
 	method add-entry ( $now, Str :$text, Str :$nick, Bool :$sed = False ) {
-		%!hash{$now} = text => $text, nick => $nick, sed => $sed;
+		#%!hash{$now} = text => $text, nick => $nick, sed => $sed;
+		@!history.unshift: $now => { text => $text, nick => $nick, sed => $sed};
+	}
+	method get-history {
+		@!history;
 	}
 }
 my class chanevent-class does perlbot-file is export {

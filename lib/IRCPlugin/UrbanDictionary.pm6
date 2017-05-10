@@ -31,6 +31,7 @@ class Urban-Dictionary does IRC::Client::Plugin {
 						my $first-line = irc-style-text(:style<bold>, "{$def.word}: ") ~ $definition;
 						my $second-line = irc-style-text(:style<italic>, $example);
 						$.irc.send: :where($e.channel) :text( $first-line );
+						sleep 0.5;
 						$.irc.send: :where($e.channel) :text( $second-line );
 					}
 					else {

@@ -11,4 +11,6 @@ before_install:
     - cpanm install WebService::UrbanDictionary
 install:
     - rakudobrew build-zef
+    # This module is no longer in the ecosystem, so install it manually
+    - zef install 'https://github.com/zoffixznet/perl6-WWW-Google-Time.git'
     - zef --depsonly .

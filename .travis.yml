@@ -13,4 +13,4 @@ install:
     - rakudobrew build-zef
     # This module is no longer in the ecosystem, so install it manually
     - zef install 'https://github.com/zoffixznet/perl6-WWW-Google-Time.git'
-    - zef --depsonly .
+    - zef install --depsonly .

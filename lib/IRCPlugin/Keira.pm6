@@ -211,6 +211,27 @@ class Keira does IRC::Client::Plugin {
 		my $timer_3 = now;
 		note "2->3: {$timer_3 - $timer_2}" if $debug;
 		given $e.text {
+			when m/ ^ \s* '[' $<trigger-text>=(.*) ']' \s* $ / {
+				my $trigger-text = $<trigger-text>.trim.uc;
+				$trigger-text = $trigger-text.substr(0, *-2) ~ "ING"
+					if $trigger-text.ends-with('ED') and 3 < $trigger-text.chars;
+				my $all = False;
+				my $all-color = 'white';
+				my $all-bgcolor = 'red';
+				my $side-color = 'red';
+				my $side-bgcolor = 'white';
+				my $out;
+				if $all {
+					$out = irc-style-text("[" ~ "$trigger-text INTENSIFIES" ~ "]", :color($all-color), :bgcolor($all-bgcolor));
+				}
+				else {
+					$out = irc-style-text("[", :color($side-color), :bgcolor($side-bgcolor)) ~
+					irc-style-text("$trigger-text ", :color($all-color), :bgcolor($all-bgcolor)) ~
+					irc-style-text(" INTENSIFIES", :color($side-color), :bgcolor($side-bgcolor)) ~
+					irc-style-text("]", :color($side-bgcolor), :bgcolor($side-color));
+				}
+				$.irc.send: :where($e.channel) :text($out);
+			}
 			=head2 Text Substitution
 			=para
 			s/before/after/gi functionality. Use g or i at the end to make it global or case insensitive

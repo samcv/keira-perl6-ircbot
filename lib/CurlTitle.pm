@@ -193,7 +193,7 @@ sub get_url_title {
 	my $curl_retry_times = 1;
 	my @curl_args;
 	@curl_args = (
-		'--compressed',    '-H',         $user_agent,    '--retry',
+		'--compressed',    '-H',     ($sub_url =~ m{youtube\.com} ? '' :  $user_agent ),    '--retry',
 		$curl_retry_times, '--max-time', $curl_max_time, '--no-buffer',
 		'-i',              '--url',      $sub_url,
 	);

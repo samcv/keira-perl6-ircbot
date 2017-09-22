@@ -26,6 +26,7 @@ sub process_curl {
 	# REGEX
 	my $title_text_regex  = '\s*(.*\S+)\s*';
 	my $title_start_regex = '.*<title.*?>';
+	my $title_start_regex1 = '.*<title>';
 	my $title_end_regex   = '</title>.*';
 	my @curl_title;
 
@@ -64,7 +65,8 @@ sub process_curl {
 		elsif ( defined $curl_line ) {
 
 			# Find the <title> element
-			if ( $curl_line =~ s{$title_start_regex}{}i ) {
+			if ( $curl_line =~ s{$title_start_regex1}{}i || $curl_line =~ s{$title_start_regex}{}i ) {
+				print ">>>>> $curl_line\n";
 				$process{title_start_line} = $process{line_no};
 			}
 

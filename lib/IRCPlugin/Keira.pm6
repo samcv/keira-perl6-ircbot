@@ -3,7 +3,6 @@ use v6.c;
 use IRC::Client;
 use Text::Markov;
 use Terminal::ANSIColor;
-use WWW::Google::Time;
 # My Modules
 use P5-to-P6-Regex;
 use IRC::TextColor;
@@ -307,6 +306,11 @@ class Keira does IRC::Client::Plugin {
 		}
 		if $e.text.starts-with('!') {
 			given $e.text {
+				when / ^ '!g ' (.*) / {
+					use URI::Encode;
+					my $url = "http://www.google.com/search?q={ uri_decode($0.Str) }&btnI";
+					$!proc.print("{$e.channel} >$bot-nick\< \<{$e.nick}>  $url\n");
+				}
 				when / ^ '!derp' / {
 					send-markov-to-chan($e);
 				}
@@ -515,24 +519,6 @@ class Keira does IRC::Client::Plugin {
 						}
 						$.irc.send: :where($e.nick), :text($second);
 					}
-				}
-				=head2 Time
-				=para Gets the current time in the specified location. Uses Google to do the lookups.
-				=para `Usage !time Location`
-
-				when / ^ '!time ' (.*) / {
-					my $time-query = ~$0;
-					my $g-prom = start {
-						my %google-time = google-time-in($time-query);
-						if %google-time {
-							my $response = "It is now {%google-time<str>} in {irc-style-text(%google-time<where>, :color<blue>, :style<bold>)}";
-							$.irc.send: :where($e.channel), :text($response);
-						}
-						else {
-							$.irc.send: :where($e.channel), :text("Cannot find the time for {irc-style-text($time-query, :color<blue>, :style<bold>)}");
-						}
-					}
-
 				}
 				=head2 Perl 6 Eval
 				=para Evaluates the requested Perl 6 code and returns the output of standard out

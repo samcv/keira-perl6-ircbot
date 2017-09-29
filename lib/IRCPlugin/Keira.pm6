@@ -175,7 +175,7 @@ class Keira does IRC::Client::Plugin {
 			$!event_file_supplier.emit( 3 )
 		} );
 		my $p = start {
-			$markov-lock.protect( { $markov = Text::Markov.new } );
+			$markov-lock.protect( { $markov = Text::Markov.new: :order<new> } );
 			for $history-file.get-history».values -> $value {
 				markov-feed( $value{'text'} );
 			}

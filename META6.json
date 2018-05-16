@@ -8,6 +8,7 @@
                     "IRC::Client",
                     "Terminal::ANSIColor",
                     "Text::Markov",
+                    "URI::Encode",
                     "Inline::Perl5",
 					"IRC::TextColor"],
     "source-url"  : "git://github.com/samcv/keira-perl6-ircbot.git"

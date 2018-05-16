@@ -7,7 +7,6 @@
     "depends"     : ["JSON::Tiny",
                     "IRC::Client",
                     "Terminal::ANSIColor",
-                    "WWW::Google::Time",
                     "Text::Markov",
                     "Inline::Perl5",
 					"IRC::TextColor"],

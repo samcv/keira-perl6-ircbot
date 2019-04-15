@@ -88,7 +88,7 @@ class Keira does IRC::Client::Plugin {
 		if $string !~~ / ^ '!'|'s/'|[\S': '] / {
 			$string ~~ s/$/ /;
 			$string ~~ s:g/(\S+) ('.'|'!'|':'|';'|',') ' '/ $0 $1 /;
-			$markov-lock.protect( {	$markov.feed( $string.words ) } );
+			$markov-lock.protect( {	$markov.feed( $string.words ) if $markov.isa(Text::Markov) } );
 		}
 	}
 	method irc-mode-channel ($e) {
